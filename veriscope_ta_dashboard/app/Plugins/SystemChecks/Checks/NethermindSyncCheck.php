@@ -38,35 +38,41 @@ class NethermindSyncCheck implements Check
 
         $client = new Client(['base_uri' => $httpRpc]);
 
-        // Get the current block number from Nethermind
+        // Check sync status
         $response = $client->post('', ['json' => [
             'jsonrpc' => '2.0',
-            'method' => 'eth_blockNumber',
+            'method' => 'eth_syncing',
             'params' => [],
             'id' => 1,
         ]]);
         $body = json_decode($response->getBody(), true);
-        $currentBlockNumber = hexdec($body['result']);
+        $syncStatus = $body['result'];
 
-        // Get the highest block number known to the Ethereum network
-        $response = $client->post('', ['json' => [
-            'jsonrpc' => '2.0',
-            'method' => 'eth_blockNumber',
-            'params' => [],
-            'id' => 2,
-        ]]);
-        $body = json_decode($response->getBody(), true);
-        $highestBlockNumber = hexdec($body['result']);
+        // eth_syncing returns false when fully synced, or an object with sync progress when syncing
+        if ($syncStatus === false) {
+            // Check peer count to ensure we're connected to the network
+            $response = $client->post('', ['json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'net_peerCount',
+                'params' => [],
+                'id' => 2,
+            ]]);
+            $body = json_decode($response->getBody(), true);
+            $peerCount = hexdec($body['result']);
 
-        // Check if Nethermind is fully synced
-        if ($currentBlockNumber < ($highestBlockNumber - 2)) {
-            $result['message'] = 'Nethermind is not fully synced. The current block is ' . $currentBlockNumber . ' and the highest block is ' . $highestBlockNumber;
-            return $result;
-        }
+            if ($peerCount === 0) {
+                $result['message'] = 'Nethermind has no peers connected. Cannot verify sync status.';
+                return $result;
+            }
 
-        if ($currentBlockNumber >= ($highestBlockNumber - 2)) {
             $result['success'] = true;
-            $result['message'] = 'Nethermind is fully synced';
+            $result['message'] = 'Nethermind is fully synced with ' . $peerCount . ' peer(s)';
+            return $result;
+        } else {
+            // Currently syncing
+            $currentBlock = hexdec($syncStatus['currentBlock']);
+            $highestBlock = hexdec($syncStatus['highestBlock']);
+            $result['message'] = 'Nethermind is syncing. Current block: ' . $currentBlock . ', Highest block: ' . $highestBlock;
             return $result;
         }
 

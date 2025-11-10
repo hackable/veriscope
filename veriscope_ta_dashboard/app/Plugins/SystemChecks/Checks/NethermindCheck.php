@@ -36,13 +36,26 @@ class NethermindCheck implements Check
 
 
         $client = new Client();
-        $response = $client->get($httpRpc);
+        $response = $client->post($httpRpc, [
+            'json' => [
+                'jsonrpc' => '2.0',
+                'method' => 'eth_blockNumber',
+                'params' => [],
+                'id' => 1
+            ]
+        ]);
         $status = $response->getStatusCode();
 
         if ($status === 200) {
-            $result['success'] =  true;
-            $result['message'] = 'Nethermind is running';
-            return $result;
+            $body = json_decode($response->getBody(), true);
+            if (isset($body['result'])) {
+                $result['success'] =  true;
+                $result['message'] = 'Nethermind is running';
+                return $result;
+            } else {
+                $result['message'] = 'Nethermind returned invalid response';
+                return $result;
+            }
         } else {
             $result['message'] = 'Nethermind is not running';
             return $result;

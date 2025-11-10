@@ -17,26 +17,24 @@ class HorizonCheck implements Check
     public function run()
     {
         $result = ['success' => false, 'message' => ''];
-        // Check if the horizon process is running
-        $process = new Process(['ps', 'aux']);
-        $process->run();
 
-        if (!$process->isSuccessful()) {
-            $result['message'] = 'Unable to check Horizon status';
+        try {
+            // Check Horizon status via artisan command
+            Artisan::call('horizon:status');
+            $output = Artisan::output();
+
+            // If Horizon is running, the output will contain "running"
+            if (stripos($output, 'running') !== false) {
+                $result['success'] = true;
+                $result['message'] = 'Horizon is running';
+            } else {
+                $result['message'] = 'Horizon is not running';
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            $result['message'] = 'Unable to check Horizon status: ' . $e->getMessage();
             return $result;
         }
-
-        $output = $process->getOutput();
-
-        if (strpos($output, 'artisan horizon') !== false) {
-            $result['success'] =  true;
-            $result['message'] = 'Horizon is running';
-            return $result;
-        } else {
-            $result['message'] = 'Horizon is not running';
-            return $result;
-        }
-
-
     }
 }

@@ -103,7 +103,7 @@ class EthereumToolsUtils
         if (strlen($publicKey) !== 130) {
             throw new InvalidArgumentException('Invalid public key length.');
         }
-        return '0x' . mb_substr(self::sha3(mb_substr(hex2bin($publicKey), 1)), 24);
+        return '0x' . substr(self::sha3(substr(hex2bin($publicKey), 1)), 24);
     }
 
     /**
