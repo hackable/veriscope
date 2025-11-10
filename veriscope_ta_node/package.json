@@ -7,7 +7,7 @@
     "@keyv/redis": "^2.2.1",
     "axios": "^1.6.0",
     "bull": "^4.1.1",
-    "bull-arena": "^2.6.2",
+    "bull-arena": "^2.8.3",
     "cookie-parser": "^1.4.6",
     "crypto-js": "^4.1.1",
     "dotenv": "^8.2.0",
