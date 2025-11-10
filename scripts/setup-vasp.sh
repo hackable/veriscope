@@ -144,8 +144,8 @@ function install_redis_bloom {
 	 mv /tmp/redis.conf /etc/redis/redis.conf
 	 systemctl restart redis-server
 
-	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.2/fpm/php.ini
-	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/8.2/fpm/php.ini
+	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
+	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/8.3/fpm/php.ini
 	 if grep -q client_max_body_size $NGINX_CFG; then
     echo "NGINX config already has been already updated"
 	 else
@@ -164,7 +164,7 @@ function install_redis_bloom {
  	 chown -R $SERVICE_USER .
 	 su $SERVICE_USER -c "composer update"
 
-	 systemctl restart php8.2-fpm
+	 systemctl restart php8.3-fpm
  	 systemctl restart nginx
 
 	else
@@ -206,7 +206,7 @@ function refresh_dependencies() {
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
-	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq ntpdate moreutils php8.2-fpm php8.2-dom php8.2-zip php8.2-mbstring php8.2-curl php8.2-dom php8.2-gd php8.2-imagick php8.2-pgsql php8.2-gmp php8.2-redis php8.2-mbstring nodejs build-essential postgresql nginx pwgen certbot
+	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq ntpdate moreutils php8.3-fpm php8.3-dom php8.3-zip php8.3-mbstring php8.3-curl php8.3-dom php8.3-gd php8.3-imagick php8.3-pgsql php8.3-gmp php8.3-redis php8.3-mbstring nodejs build-essential postgresql nginx pwgen certbot
 	apt-get install -y protobuf-compiler libtiff5-dev libjpeg8-dev libopenjp2-7-dev zlib1g-dev \
     libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk python3-pip \
     libharfbuzz-dev libfribidi-dev libxcb1-dev
@@ -418,7 +418,7 @@ function setup_nginx {
 	} ' >$NGINX_CFG
 
 	systemctl enable nginx
-	systemctl restart php8.2-fpm
+	systemctl restart php8.3-fpm
 	systemctl restart nginx
 }
 

@@ -38,7 +38,7 @@
       }
     ],
     "require": {
-        "php": "^8.0",
+        "php": "^8.3",
         "cboden/ratchet": "v0.6.1",
         "asantibanez/laravel-eloquent-state-machines": "dev-master",
         "bayareawebpro/laravel-simple-csv": "v2.2.0",
