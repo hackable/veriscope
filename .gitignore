@@ -18,6 +18,8 @@ infra/cloudformation/packaged-iac-bootstrap.yaml
 infra/configure/scripts/*venv*
 infra/terraform/scripts/__pycache__/*
 .env.bak
+.env
+
 # Auto-generated Docker configuration files
-docker-compose.nethermind.yml
 docker-scripts/nginx/nginx-ssl.conf
+

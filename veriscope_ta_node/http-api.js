@@ -7,12 +7,13 @@ const winston = require('winston');
 const ethers = require("ethers");
 const Web3 = require('web3');
 const dotenv = require('dotenv');
+
+dotenv.config();
+
 const services = require('./services');
 const EthereumEvents = require('@0xhamachi/ethereum-events');
 const fs = require('fs');
 var _ = require('underscore');
-
-dotenv.config();
 const Keyv = require('keyv');
 const keyv = new Keyv(process.env.REDIS_URI);
 const jwt = require('express-jwt');
