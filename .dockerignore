@@ -1,0 +1,57 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker files
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
+*.md
+README*
+CHANGELOG*
+LICENSE*
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Laravel specific
+veriscope_ta_dashboard/node_modules
+veriscope_ta_dashboard/vendor
+veriscope_ta_dashboard/storage/logs/*.log
+veriscope_ta_dashboard/.env.backup
+veriscope_ta_dashboard/.env.bak
+
+# Node.js specific
+veriscope_ta_node/node_modules
+veriscope_ta_node/.env.backup
+veriscope_ta_node/.env.bak
+
+# Infrastructure
+infra/
+terraform/
+chains/
+
+# Build artifacts
+*.tar.gz
+dist/
+build/
+
+# Backup files
+*.backup
+*.bak
+.env.backup
