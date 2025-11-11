@@ -1,7 +1,7 @@
 #!/bin/bash
 # Manage secrets for Veriscope Docker deployment
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
