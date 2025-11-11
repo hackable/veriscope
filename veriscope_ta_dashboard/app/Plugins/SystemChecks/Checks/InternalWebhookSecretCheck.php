@@ -25,10 +25,15 @@ class InternalWebhookSecretCheck implements Check
 
         // Read the TRUST_ANCHOR_ACCOUNT variable from the .env file
         $envContents = File::get($path);
-        preg_match('/WEBHOOK_CLIENT_SECRET=(.+)/', $envContents, $matches);
+        preg_match('/WEBHOOK_CLIENT_SECRET=(.*)/', $envContents, $matches);
 
         // Get the internal webhook client secret from .env file in veriscope_ta_node folder
-        $taNodeSecret = str_replace('"', '',$matches[1]) ?? null;
+        $taNodeSecret = isset($matches[1]) ? str_replace('"', '', trim($matches[1])) : null;
+
+        // Treat empty string as null
+        if ($taNodeSecret === '') {
+            $taNodeSecret = null;
+        }
 
         // Get the internal webhook client secret from .env file in veriscope_ta_dashboard folder
         $taDashboardSecret = env('WEBHOOK_CLIENT_SECRET');
