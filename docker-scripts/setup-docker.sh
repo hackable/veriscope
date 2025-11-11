@@ -10,7 +10,7 @@ set -e
 # - This ensures consistent routing and security between dev and production
 # - Browser connects: http://localhost/app/websocketkey (not ws://localhost:6001)
 
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.dev.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FULL_INSTALL_MODE=false
 
@@ -141,22 +141,30 @@ generate_secret() {
 #   POSTGRES_DB - PostgreSQL database name (default: trustanchor)
 generate_postgres_credentials() {
     local env_file=".env"
+    local pgpass=""
+    local pguser="trustanchor"
+    local pgdb="trustanchor"
 
     # Check if postgres password is already set in root .env
     if [ -f "$env_file" ] && grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
         local existing_pass=$(grep "^POSTGRES_PASSWORD=" "$env_file" | cut -d'=' -f2)
         if [ ! -z "$existing_pass" ] && [ "$existing_pass" != "trustanchor_dev" ]; then
-            echo_info "PostgreSQL credentials already configured"
-            return 0
+            echo_info "PostgreSQL credentials already exist in root .env"
+            # Use existing credentials instead of generating new ones
+            pgpass="$existing_pass"
+            pguser=$(grep "^POSTGRES_USER=" "$env_file" | cut -d'=' -f2 || echo "trustanchor")
+            pgdb=$(grep "^POSTGRES_DB=" "$env_file" | cut -d'=' -f2 || echo "trustanchor")
+            # Continue to update Laravel .env (don't return early!)
+        else
+            # Generate new credentials
+            echo_info "Generating new PostgreSQL credentials..."
+            pgpass=$(generate_secret)
         fi
+    else
+        # Generate new credentials
+        echo_info "Generating PostgreSQL credentials..."
+        pgpass=$(generate_secret)
     fi
-
-    echo_info "Generating PostgreSQL credentials..."
-
-    # Generate random password
-    local pgpass=$(generate_secret)
-    local pguser="trustanchor"
-    local pgdb="trustanchor"
 
     # Update root .env file
     if [ -f "$env_file" ]; then
@@ -193,7 +201,7 @@ POSTGRES_DB=$pgdb" "$env_file"
     if [ -f "$laravel_env" ]; then
         echo_info "Updating Laravel configuration for Docker..."
 
-        # Database configuration
+        # First update on host filesystem
         sed -i.bak "s#^DB_CONNECTION=.*#DB_CONNECTION=pgsql#" "$laravel_env"
         sed -i.bak "s#^DB_HOST=.*#DB_HOST=postgres#" "$laravel_env"
         sed -i.bak "s#^DB_PORT=.*#DB_PORT=5432#" "$laravel_env"
@@ -214,7 +222,7 @@ POSTGRES_DB=$pgdb" "$env_file"
         sed -i.bak 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
 
         rm -f "$laravel_env.bak"
-        echo_info "Laravel .env configured for Docker networking"
+        echo_info "Laravel .env configured (changes are immediately visible in container via bind mount)"
     fi
 
     echo_info "PostgreSQL Docker Compose environment variables configured in .env:"
@@ -725,7 +733,7 @@ regenerate_encrypt_secret() {
 install_redis_bloom() {
     echo_info "RedisBloom is already included in the Redis container!"
     echo_info ""
-    echo_info "docker-compose.dev.yml uses redis/redis-stack which includes:"
+    echo_info "docker-compose.yml uses redis/redis-stack which includes:"
     echo "  - RedisBloom (bloom filters)"
     echo "  - RedisJSON (JSON document storage)"
     echo "  - RedisSearch (full-text search)"
@@ -824,16 +832,18 @@ create_sealer_keypair() {
 
         rm -f veriscope_ta_node/.env.tmp
 
+        echo_info "Trust Anchor credentials saved (visible in container via bind mount)"
+
         # Generate WEBHOOK_CLIENT_SECRET if not already set
         if grep -q "^WEBHOOK_CLIENT_SECRET=$" veriscope_ta_node/.env || ! grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
             echo_info "Generating webhook secret..."
             local webhook_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
 
-            # Update veriscope_ta_node/.env
+            # Update veriscope_ta_node/.env on host
             if grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
-                sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$webhook_secret#" veriscope_ta_node/.env
+                sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" veriscope_ta_node/.env
             else
-                echo "WEBHOOK_CLIENT_SECRET=$webhook_secret" >> veriscope_ta_node/.env
+                echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> veriscope_ta_node/.env
             fi
             rm -f veriscope_ta_node/.env.tmp
 
@@ -841,18 +851,17 @@ create_sealer_keypair() {
             local laravel_env="veriscope_ta_dashboard/.env"
             if [ -f "$laravel_env" ]; then
                 if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-                    sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$webhook_secret#" "$laravel_env"
+                    sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" "$laravel_env"
                 else
-                    echo "WEBHOOK_CLIENT_SECRET=$webhook_secret" >> "$laravel_env"
+                    echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> "$laravel_env"
                 fi
                 rm -f "${laravel_env}.tmp"
-                echo_info "Webhook secret synchronized to both veriscope_ta_node and veriscope_ta_dashboard"
+
+                echo_info "Webhook secret synchronized (visible in containers via bind mount)"
             else
                 echo_warn "Laravel .env not found at $laravel_env - webhook secret only set in veriscope_ta_node"
             fi
         fi
-
-        echo_info "Trust Anchor credentials saved to veriscope_ta_node/.env"
     else
         echo_warn "veriscope_ta_node/.env not found. Please run setup-chain first."
     fi
@@ -1140,7 +1149,7 @@ EOF
 
     echo_info "SSL configuration created: docker-scripts/nginx/nginx-ssl.conf"
     echo_info ""
-    echo_info "To enable SSL, update docker-compose.dev.yml nginx volumes to:"
+    echo_info "To enable SSL, update docker-compose.yml nginx volumes to:"
     echo_info "  - ./docker-scripts/nginx/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro"
     echo_info "  - $ssl_cert:/etc/nginx/ssl/cert.pem:ro"
     echo_info "  - $ssl_key:/etc/nginx/ssl/key.pem:ro"
@@ -1228,32 +1237,10 @@ EOF
         fi
     fi
 
-    echo_info "Nethermind Docker Compose environment variables configured in .env:"
+    echo_info "Nethermind configuration added to .env for $network network:"
     echo_info "  NETHERMIND_ETHSTATS_SERVER=$ethstats_server"
     echo_info "  NETHERMIND_ETHSTATS_SECRET=$ethstats_secret"
     echo_info "  NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled"
-    echo_warn "These environment variables are used by Docker Compose for Nethermind configuration"
-
-    # Create docker-compose override for Nethermind
-    echo_info "Creating docker-compose.nethermind.yml override..."
-
-    cat > docker-compose.nethermind.yml <<EOF
-# Auto-generated Nethermind configuration for network: $network
-# Generated on: $(date)
-# To use: docker-compose -f docker-compose.dev.yml -f docker-compose.nethermind.yml up -d
-
-services:
-  nethermind:
-    environment:
-      - NETHERMIND_ETHSTATSCONFIG_ENABLED=$ethstats_enabled
-      - NETHERMIND_ETHSTATSCONFIG_SERVER=$ethstats_server
-      - NETHERMIND_ETHSTATSCONFIG_SECRET=$ethstats_secret
-      - NETHERMIND_ETHSTATSCONFIG_NAME=\${VERISCOPE_COMMON_NAME:-Development}
-      - NETHERMIND_ETHSTATSCONFIG_CONTACT=\${NETHERMIND_ETHSTATS_CONTACT:-}
-EOF
-
-    echo_info "Nethermind override created: docker-compose.nethermind.yml"
-    echo_info "This file configures Nethermind for the $network network"
 }
 
 # Setup chain-specific configuration
@@ -1295,12 +1282,26 @@ setup_chain_config() {
     # Configure Nethermind for this network
     configure_nethermind "$VERISCOPE_TARGET"
 
-    # Copy artifacts directory for ta-node
+    # Copy artifacts directory to Docker volume for ta-node
     if [ -d "$chain_dir/artifacts" ]; then
-        echo_info "Copying chain artifacts for $VERISCOPE_TARGET..."
-        rm -rf veriscope_ta_node/artifacts
-        cp -r "$chain_dir/artifacts" veriscope_ta_node/
-        echo_info "Artifacts copied successfully"
+        echo_info "Copying chain artifacts for $VERISCOPE_TARGET to Docker volume..."
+
+        # Get the project name from docker-compose config
+        local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+        local volume_name="${project_name}_veriscope_artifacts"
+
+        # Create volume if it doesn't exist
+        docker volume create "$volume_name" >/dev/null 2>&1 || true
+
+        # Copy artifacts from chains/$VERISCOPE_TARGET/artifacts to volume
+        # Using alpine container to perform the copy
+        docker run --rm \
+            -v "$(pwd)/$chain_dir:/source:ro" \
+            -v "$volume_name:/target" \
+            alpine sh -c "rm -rf /target/* && cp -r /source/artifacts/. /target/"
+
+        echo_info "Artifacts copied to Docker volume: $volume_name"
+        echo_info "Network: $VERISCOPE_TARGET"
     else
         echo_warn "No artifacts directory found in $chain_dir"
     fi
@@ -1311,8 +1312,8 @@ setup_chain_config() {
             echo_info "Creating veriscope_ta_node/.env from chain template..."
             cp "$chain_dir/ta-node-env" veriscope_ta_node/.env
 
-            # Update localhost URLs to Docker service names
-            echo_info "Updating .env for Docker networking..."
+            # Update localhost URLs to Docker service names on host
+            echo_info "Updating .env for Docker networking on host..."
             sed -i.bak 's|http://localhost:8545|http://nethermind:8545|g' veriscope_ta_node/.env
             sed -i.bak 's|ws://localhost:8545|ws://nethermind:8545|g' veriscope_ta_node/.env
             sed -i.bak 's|http://localhost:8000|http://app:80|g' veriscope_ta_node/.env
@@ -1320,7 +1321,7 @@ setup_chain_config() {
             sed -i.bak 's|/opt/veriscope/veriscope_ta_node/artifacts/|/app/artifacts/|g' veriscope_ta_node/.env
             rm -f veriscope_ta_node/.env.bak
 
-            echo_info "TA node .env created and configured for Docker"
+            echo_info "TA node .env configured (changes are immediately visible in container via bind mount)"
             echo_warn "Remember to run 'create-sealer' to generate Trust Anchor keypair"
         else
             echo_warn "No ta-node-env template found in $chain_dir"
@@ -1511,45 +1512,45 @@ regenerate_webhook_secret() {
 
     echo_info "Generated new secret: $new_secret"
 
-    # Update Laravel .env
+    # Update Laravel .env on host
     local laravel_env="veriscope_ta_dashboard/.env"
     if [ -f "$laravel_env" ]; then
         if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$new_secret#" "$laravel_env"
-            echo_info "Updated $laravel_env"
+            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$laravel_env"
+            echo_info "Updated host $laravel_env"
         else
-            echo "WEBHOOK_CLIENT_SECRET=$new_secret" >> "$laravel_env"
-            echo_info "Added WEBHOOK_CLIENT_SECRET to $laravel_env"
+            echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$laravel_env"
+            echo_info "Added WEBHOOK_CLIENT_SECRET to host $laravel_env"
         fi
         rm -f "${laravel_env}.bak"
     else
         echo_warn "Laravel .env not found at $laravel_env"
     fi
 
-    # Update Node.js .env
+    # Update Node.js .env on host
     local node_env="veriscope_ta_node/.env"
     if [ -f "$node_env" ]; then
         if grep -q "^WEBHOOK_CLIENT_SECRET=" "$node_env"; then
-            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$new_secret#" "$node_env"
-            echo_info "Updated $node_env"
+            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$node_env"
+            echo_info "Updated host $node_env"
         else
-            echo "WEBHOOK_CLIENT_SECRET=$new_secret" >> "$node_env"
-            echo_info "Added WEBHOOK_CLIENT_SECRET to $node_env"
+            echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$node_env"
+            echo_info "Added WEBHOOK_CLIENT_SECRET to host $node_env"
         fi
         rm -f "${node_env}.bak"
     else
         echo_warn "Node.js .env not found at $node_env"
     fi
 
-    # Restart affected services
-    echo_info "Restarting services to apply new secret..."
+    # Restart affected services to reload updated .env
+    echo_info "Restarting services to reload configuration..."
 
-    if docker-compose -f "$COMPOSE_FILE" ps app | grep -q "Up"; then
+    if docker-compose -f "$COMPOSE_FILE" ps app 2>/dev/null | grep -q "Up"; then
         docker-compose -f "$COMPOSE_FILE" restart app
         echo_info "Restarted Laravel app service"
     fi
 
-    if docker-compose -f "$COMPOSE_FILE" ps ta-node | grep -q "Up"; then
+    if docker-compose -f "$COMPOSE_FILE" ps ta-node 2>/dev/null | grep -q "Up"; then
         docker-compose -f "$COMPOSE_FILE" restart ta-node
         echo_info "Restarted Node.js ta-node service"
     fi
@@ -1686,7 +1687,7 @@ menu() {
             docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
 
             # Get the project name from docker-compose config
-            local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
@@ -1903,7 +1904,7 @@ else
             docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
 
             # Get the project name from docker-compose config
-            local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
