@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-LABEL maintainer="Yoel Peter Chandra"
+LABEL maintainer="Veriscope"
 
 ARG WWWGROUP
 
@@ -12,7 +12,7 @@ ENV TZ=Asia/Jakarta
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt-get update \
-    && apt-get install -y gnupg gosu curl ca-certificates zip unzip git supervisor sqlite3 libcap2-bin \
+    && apt-get install -y gnupg gosu curl ca-certificates zip unzip git supervisor sqlite3 libcap2-bin cron ntpdate \
     && mkdir -p ~/.gnupg \
     && echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf \
     && apt-key adv --homedir ~/.gnupg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys E5267A6C \
@@ -28,6 +28,7 @@ RUN apt-get update \
        php8.3-curl \
        php8.3-imap \
        php8.3-gd \
+       php8.3-gmp \
        php8.3-igbinary \
        php8.3-imagick \
        php8.3-intl \
@@ -54,13 +55,43 @@ RUN apt-get update \
 
 RUN setcap "cap_net_bind_service=+ep" /usr/bin/php8.3
 
-RUN groupadd --force -g $WWWGROUP sail
-RUN useradd -ms /bin/bash --no-user-group -g $WWWGROUP -u 1337 sail
+# Setup ntpdate cronjob for time synchronization
+COPY ./scripts/ntpdate /etc/cron.daily/ntpdate
+RUN chmod +x /etc/cron.daily/ntpdate
 
-COPY start-container /usr/local/bin/start-container
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY php.ini /etc/php/8.3/cli/conf.d/99-sail.ini
+RUN groupadd --force -g $WWWGROUP serviceuser
+RUN useradd -ms /bin/bash --no-user-group -g $WWWGROUP -u 1337 serviceuser
+
+# Create supervisord log directory
+RUN mkdir -p /var/log/supervisord && chown -R serviceuser:$WWWGROUP /var/log/supervisord
+
+COPY ./veriscope_ta_dashboard/docker/8.0/start-container /usr/local/bin/start-container
+COPY ./veriscope_ta_dashboard/docker/8.0/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY ./veriscope_ta_dashboard/docker/8.0/php.ini /etc/php/8.3/cli/conf.d/99-serviceuser.ini
 RUN chmod +x /usr/local/bin/start-container
+
+# Copy Laravel application code (excluding .env which is copied separately)
+COPY --chown=serviceuser:$WWWGROUP ./veriscope_ta_dashboard /var/www/html
+COPY --chown=serviceuser:$WWWGROUP ./veriscope_ta_node /var/www/veriscope_ta_node
+
+# Install PHP dependencies
+RUN cd /var/www/html && composer install --optimize-autoloader --no-interaction
+
+# Copy .env file into the image for runtime configuration
+COPY --chown=serviceuser:$WWWGROUP ./veriscope_ta_dashboard/.env /var/www/html/.env
+
+# Create Laravel writable directories if they don't exist
+RUN mkdir -p /var/www/html/storage/app \
+    /var/www/html/storage/framework/cache \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/logs \
+    /var/www/html/bootstrap/cache
+
+# Set proper permissions for Laravel directories
+RUN chown -R serviceuser:$WWWGROUP /var/www/html \
+    && chmod -R 775 /var/www/html/storage \
+    && chmod -R 775 /var/www/html/bootstrap/cache
 
 EXPOSE 8000
 
