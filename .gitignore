@@ -23,3 +23,4 @@ infra/terraform/scripts/__pycache__/*
 # Auto-generated Docker configuration files
 docker-scripts/nginx/nginx-ssl.conf
 
+veriscope_ta_dashboard/.env
