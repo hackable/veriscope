@@ -22,7 +22,7 @@ RUN apt-get update \
     && curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
     && echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list \
     && apt-get update \
-    && apt-get install -y php8.3-cli php8.3-dev \
+    && apt-get install -y php8.3-cli php8.3-dev php8.3-fpm \
        php8.3-apcu \
        php8.3-bcmath \
        php8.3-curl \
@@ -68,6 +68,8 @@ RUN mkdir -p /var/log/supervisord && chown -R serviceuser:$WWWGROUP /var/log/sup
 COPY ./veriscope_ta_dashboard/docker/8.0/start-container /usr/local/bin/start-container
 COPY ./veriscope_ta_dashboard/docker/8.0/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY ./veriscope_ta_dashboard/docker/8.0/php.ini /etc/php/8.3/cli/conf.d/99-serviceuser.ini
+COPY ./veriscope_ta_dashboard/docker/8.0/php.ini /etc/php/8.3/fpm/conf.d/99-serviceuser.ini
+COPY ./veriscope_ta_dashboard/docker/8.0/www.conf /etc/php/8.3/fpm/pool.d/www.conf
 RUN chmod +x /usr/local/bin/start-container
 
 # Copy Laravel application code (excluding .env which is copied separately)
@@ -79,6 +81,10 @@ RUN cd /var/www/html && composer install --optimize-autoloader --no-interaction
 
 # Copy .env file into the image for runtime configuration
 COPY --chown=serviceuser:$WWWGROUP ./veriscope_ta_dashboard/.env /var/www/html/.env
+
+# Install NPM dependencies and build frontend assets
+# This ensures assets are built with environment variables from .env
+RUN cd /var/www/html && npm install --legacy-peer-deps && npm run prod
 
 # Create Laravel writable directories if they don't exist
 RUN mkdir -p /var/www/html/storage/app \

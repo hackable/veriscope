@@ -170,7 +170,7 @@ generate_postgres_credentials() {
     if [ -f "$env_file" ]; then
         # Update or add POSTGRES_PASSWORD
         if grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
-            sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$pgpass/" "$env_file"
+            sed -i "" "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$pgpass/" "$env_file"
         else
             # Add PostgreSQL section with proper formatting
             cat >> "$env_file" <<EOF
@@ -186,11 +186,11 @@ EOF
         # Ensure POSTGRES_USER and POSTGRES_DB are set if POSTGRES_PASSWORD already existed
         if grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
             if ! grep -q "^POSTGRES_USER=" "$env_file"; then
-                sed -i.bak "/^POSTGRES_PASSWORD=/a\\
+                sed -i "" "/^POSTGRES_PASSWORD=/a\\
 POSTGRES_USER=$pguser" "$env_file"
             fi
             if ! grep -q "^POSTGRES_DB=" "$env_file"; then
-                sed -i.bak "/^POSTGRES_USER=/a\\
+                sed -i "" "/^POSTGRES_USER=/a\\
 POSTGRES_DB=$pgdb" "$env_file"
             fi
         fi
@@ -202,26 +202,34 @@ POSTGRES_DB=$pgdb" "$env_file"
         echo_info "Updating Laravel configuration for Docker..."
 
         # First update on host filesystem
-        sed -i.bak "s#^DB_CONNECTION=.*#DB_CONNECTION=pgsql#" "$laravel_env"
-        sed -i.bak "s#^DB_HOST=.*#DB_HOST=postgres#" "$laravel_env"
-        sed -i.bak "s#^DB_PORT=.*#DB_PORT=5432#" "$laravel_env"
-        sed -i.bak "s#^DB_DATABASE=.*#DB_DATABASE=$pgdb#" "$laravel_env"
-        sed -i.bak "s#^DB_USERNAME=.*#DB_USERNAME=$pguser#" "$laravel_env"
-        sed -i.bak "s#^DB_PASSWORD=.*#DB_PASSWORD=$pgpass#" "$laravel_env"
+        sed -i "" "s#^DB_CONNECTION=.*#DB_CONNECTION=pgsql#" "$laravel_env"
+        sed -i "" "s#^DB_HOST=.*#DB_HOST=postgres#" "$laravel_env"
+        sed -i "" "s#^DB_PORT=.*#DB_PORT=5432#" "$laravel_env"
+        sed -i "" "s#^DB_DATABASE=.*#DB_DATABASE=$pgdb#" "$laravel_env"
+        sed -i "" "s#^DB_USERNAME=.*#DB_USERNAME=$pguser#" "$laravel_env"
+        sed -i "" "s#^DB_PASSWORD=.*#DB_PASSWORD=$pgpass#" "$laravel_env"
 
         # Redis configuration (Docker service names)
-        sed -i.bak 's|^REDIS_HOST=127\.0\.0\.1|REDIS_HOST=redis|g' "$laravel_env"
-        sed -i.bak 's|^REDIS_HOST=localhost|REDIS_HOST=redis|g' "$laravel_env"
+        sed -i "" 's|^REDIS_HOST=127\.0\.0\.1|REDIS_HOST=redis|g' "$laravel_env"
+        sed -i "" 's|^REDIS_HOST=localhost|REDIS_HOST=redis|g' "$laravel_env"
 
         # Pusher/WebSocket configuration (Docker service names)
-        sed -i.bak 's|^PUSHER_APP_HOST=127\.0\.0\.1|PUSHER_APP_HOST=app|g' "$laravel_env"
-        sed -i.bak 's|^PUSHER_APP_HOST=localhost|PUSHER_APP_HOST=app|g' "$laravel_env"
+        sed -i "" 's|^PUSHER_APP_HOST=127\.0\.0\.1|PUSHER_APP_HOST=app|g' "$laravel_env"
+        sed -i "" 's|^PUSHER_APP_HOST=localhost|PUSHER_APP_HOST=app|g' "$laravel_env"
 
         # TA Node API URLs (Docker service names)
-        sed -i.bak 's|^HTTP_API_URL=http://localhost:8080|HTTP_API_URL=http://ta-node:8080|g' "$laravel_env"
-        sed -i.bak 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
+        sed -i "" 's|^HTTP_API_URL=http://localhost:8080|HTTP_API_URL=http://ta-node:8080|g' "$laravel_env"
+        sed -i "" 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
 
-        rm -f "$laravel_env.bak"
+        # Set APP_URL from VERISCOPE_SERVICE_HOST
+        local service_host="${VERISCOPE_SERVICE_HOST:-localhost}"
+        local app_url="https://$service_host"
+        if [ "$service_host" = "localhost" ] || [ "$service_host" = "127.0.0.1" ]; then
+            app_url="http://$service_host"
+        fi
+        sed -i "" "s|^APP_URL=.*|APP_URL=$app_url|g" "$laravel_env"
+        echo_info "Set APP_URL=$app_url"
+
         echo_info "Laravel .env configured (changes are immediately visible in container via bind mount)"
     fi
 
@@ -801,19 +809,16 @@ create_sealer_keypair() {
     if [ -f "veriscope_ta_node/.env" ]; then
         echo_info "Updating veriscope_ta_node/.env with keypair..."
 
-        # Backup first
-        cp veriscope_ta_node/.env veriscope_ta_node/.env.bak
-
         # Update or add TRUST_ANCHOR_ACCOUNT
         if grep -q "^TRUST_ANCHOR_ACCOUNT=" veriscope_ta_node/.env; then
-            sed -i.tmp "s#^TRUST_ANCHOR_ACCOUNT=.*#TRUST_ANCHOR_ACCOUNT=$address#" veriscope_ta_node/.env
+            sed -i "" "s#^TRUST_ANCHOR_ACCOUNT=.*#TRUST_ANCHOR_ACCOUNT=$address#" veriscope_ta_node/.env
         else
             echo "TRUST_ANCHOR_ACCOUNT=$address" >> veriscope_ta_node/.env
         fi
 
         # Update or add TRUST_ANCHOR_PK
         if grep -q "^TRUST_ANCHOR_PK=" veriscope_ta_node/.env; then
-            sed -i.tmp "s#^TRUST_ANCHOR_PK=.*#TRUST_ANCHOR_PK=$privatekey#" veriscope_ta_node/.env
+            sed -i "" "s#^TRUST_ANCHOR_PK=.*#TRUST_ANCHOR_PK=$privatekey#" veriscope_ta_node/.env
         else
             echo "TRUST_ANCHOR_PK=$privatekey" >> veriscope_ta_node/.env
         fi
@@ -821,7 +826,7 @@ create_sealer_keypair() {
         # Update or add TRUST_ANCHOR_PREFNAME from VERISCOPE_COMMON_NAME
         if [ ! -z "$VERISCOPE_COMMON_NAME" ] && [ "$VERISCOPE_COMMON_NAME" != "unset" ]; then
             if grep -q "^TRUST_ANCHOR_PREFNAME=" veriscope_ta_node/.env; then
-                sed -i.tmp "s#^TRUST_ANCHOR_PREFNAME=.*#TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"#" veriscope_ta_node/.env
+                sed -i "" "s#^TRUST_ANCHOR_PREFNAME=.*#TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"#" veriscope_ta_node/.env
             else
                 echo "TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"" >> veriscope_ta_node/.env
             fi
@@ -830,37 +835,43 @@ create_sealer_keypair() {
             echo_warn "VERISCOPE_COMMON_NAME not set - please manually set TRUST_ANCHOR_PREFNAME in veriscope_ta_node/.env"
         fi
 
-        rm -f veriscope_ta_node/.env.tmp
 
         echo_info "Trust Anchor credentials saved (visible in container via bind mount)"
 
-        # Generate WEBHOOK_CLIENT_SECRET if not already set
-        if grep -q "^WEBHOOK_CLIENT_SECRET=$" veriscope_ta_node/.env || ! grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
-            echo_info "Generating webhook secret..."
-            local webhook_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
+        # Always ensure WEBHOOK_CLIENT_SECRET is set and synchronized
+        echo_info "Synchronizing webhook secret..."
+        local webhook_secret=""
 
-            # Update veriscope_ta_node/.env on host
-            if grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
-                sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" veriscope_ta_node/.env
+        # Check if ta_node already has a valid secret
+        if grep -q "^WEBHOOK_CLIENT_SECRET=\".\+\"$" veriscope_ta_node/.env; then
+            # Extract existing secret from ta_node
+            webhook_secret=$(grep "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env | sed 's/^WEBHOOK_CLIENT_SECRET="\(.*\)"$/\1/')
+            echo_info "Using existing webhook secret from veriscope_ta_node"
+        else
+            # Generate new secret if none exists or empty
+            webhook_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
+            echo_info "Generated new webhook secret"
+        fi
+
+        # Always update veriscope_ta_node/.env on host
+        if grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
+            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" veriscope_ta_node/.env
+        else
+            echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> veriscope_ta_node/.env
+        fi
+
+        # Always update veriscope_ta_dashboard/.env to keep them in sync
+        local laravel_env="veriscope_ta_dashboard/.env"
+        if [ -f "$laravel_env" ]; then
+            if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
+                sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" "$laravel_env"
             else
-                echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> veriscope_ta_node/.env
+                echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> "$laravel_env"
             fi
-            rm -f veriscope_ta_node/.env.tmp
 
-            # Also update veriscope_ta_dashboard/.env to keep them in sync
-            local laravel_env="veriscope_ta_dashboard/.env"
-            if [ -f "$laravel_env" ]; then
-                if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-                    sed -i.tmp "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" "$laravel_env"
-                else
-                    echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> "$laravel_env"
-                fi
-                rm -f "${laravel_env}.tmp"
-
-                echo_info "Webhook secret synchronized (visible in containers via bind mount)"
-            else
-                echo_warn "Laravel .env not found at $laravel_env - webhook secret only set in veriscope_ta_node"
-            fi
+            echo_info "Webhook secret synchronized between veriscope_ta_node and veriscope_ta_dashboard"
+        else
+            echo_warn "Laravel .env not found at $laravel_env - webhook secret only set in veriscope_ta_node"
         fi
     else
         echo_warn "veriscope_ta_node/.env not found. Please run setup-chain first."
@@ -931,18 +942,17 @@ obtain_ssl_certificate() {
         local cert_dir="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST"
 
         if grep -q "^SSL_CERT_PATH=" .env; then
-            sed -i.bak "s#^SSL_CERT_PATH=.*#SSL_CERT_PATH=$cert_dir/fullchain.pem#" .env
+            sed -i "" "s#^SSL_CERT_PATH=.*#SSL_CERT_PATH=$cert_dir/fullchain.pem#" .env
         else
             echo "SSL_CERT_PATH=$cert_dir/fullchain.pem" >> .env
         fi
 
         if grep -q "^SSL_KEY_PATH=" .env; then
-            sed -i.bak "s#^SSL_KEY_PATH=.*#SSL_KEY_PATH=$cert_dir/privkey.pem#" .env
+            sed -i "" "s#^SSL_KEY_PATH=.*#SSL_KEY_PATH=$cert_dir/privkey.pem#" .env
         else
             echo "SSL_KEY_PATH=$cert_dir/privkey.pem" >> .env
         fi
 
-        rm -f .env.bak
 
         echo_info "Certificate paths saved to .env"
         echo_info "  Certificate: $cert_dir/fullchain.pem"
@@ -1219,19 +1229,19 @@ EOF
     else
         # Update existing values
         if grep -q "^NETHERMIND_ETHSTATS_SERVER=" .env; then
-            sed -i.bak "s#^NETHERMIND_ETHSTATS_SERVER=.*#NETHERMIND_ETHSTATS_SERVER=$ethstats_server#" .env
+            sed -i "" "s#^NETHERMIND_ETHSTATS_SERVER=.*#NETHERMIND_ETHSTATS_SERVER=$ethstats_server#" .env
         else
             echo "NETHERMIND_ETHSTATS_SERVER=$ethstats_server" >> .env
         fi
 
         if grep -q "^NETHERMIND_ETHSTATS_SECRET=" .env; then
-            sed -i.bak "s#^NETHERMIND_ETHSTATS_SECRET=.*#NETHERMIND_ETHSTATS_SECRET=$ethstats_secret#" .env
+            sed -i "" "s#^NETHERMIND_ETHSTATS_SECRET=.*#NETHERMIND_ETHSTATS_SECRET=$ethstats_secret#" .env
         else
             echo "NETHERMIND_ETHSTATS_SECRET=$ethstats_secret" >> .env
         fi
 
         if grep -q "^NETHERMIND_ETHSTATS_ENABLED=" .env; then
-            sed -i.bak "s#^NETHERMIND_ETHSTATS_ENABLED=.*#NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled#" .env
+            sed -i "" "s#^NETHERMIND_ETHSTATS_ENABLED=.*#NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled#" .env
         else
             echo "NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled" >> .env
         fi
@@ -1314,12 +1324,11 @@ setup_chain_config() {
 
             # Update localhost URLs to Docker service names on host
             echo_info "Updating .env for Docker networking on host..."
-            sed -i.bak 's|http://localhost:8545|http://nethermind:8545|g' veriscope_ta_node/.env
-            sed -i.bak 's|ws://localhost:8545|ws://nethermind:8545|g' veriscope_ta_node/.env
-            sed -i.bak 's|http://localhost:8000|http://app:80|g' veriscope_ta_node/.env
-            sed -i.bak 's|redis://127.0.0.1:6379|redis://redis:6379|g' veriscope_ta_node/.env
-            sed -i.bak 's|/opt/veriscope/veriscope_ta_node/artifacts/|/app/artifacts/|g' veriscope_ta_node/.env
-            rm -f veriscope_ta_node/.env.bak
+            sed -i "" 's|http://localhost:8545|http://nethermind:8545|g' veriscope_ta_node/.env
+            sed -i "" 's|ws://localhost:8545|ws://nethermind:8545|g' veriscope_ta_node/.env
+            sed -i "" 's|http://localhost:8000|http://nginx:80|g' veriscope_ta_node/.env
+            sed -i "" 's|redis://127.0.0.1:6379|redis://redis:6379|g' veriscope_ta_node/.env
+            sed -i "" 's|/opt/veriscope/veriscope_ta_node/artifacts/|/app/artifacts/|g' veriscope_ta_node/.env
 
             echo_info "TA node .env configured (changes are immediately visible in container via bind mount)"
             echo_warn "Remember to run 'create-sealer' to generate Trust Anchor keypair"
@@ -1428,12 +1437,6 @@ refresh_static_nodes() {
     if jq empty "$temp_file" 2>/dev/null; then
         echo_info "Successfully retrieved static nodes"
 
-        # Backup existing static-nodes.json
-        if [ -f "$static_nodes_file" ]; then
-            cp "$static_nodes_file" "${static_nodes_file}.bak"
-            echo_info "Backed up existing static-nodes.json"
-        fi
-
         # Update static-nodes.json
         cp "$temp_file" "$static_nodes_file"
         echo_info "Updated $static_nodes_file"
@@ -1468,7 +1471,7 @@ refresh_static_nodes() {
 
         # Update .env with enode contact info
         if grep -q "^NETHERMIND_ETHSTATS_CONTACT=" .env; then
-            sed -i.bak "s#^NETHERMIND_ETHSTATS_CONTACT=.*#NETHERMIND_ETHSTATS_CONTACT=$enode#" .env
+            sed -i "" "s#^NETHERMIND_ETHSTATS_CONTACT=.*#NETHERMIND_ETHSTATS_CONTACT=$enode#" .env
         else
             echo "NETHERMIND_ETHSTATS_CONTACT=$enode" >> .env
         fi
@@ -1516,13 +1519,12 @@ regenerate_webhook_secret() {
     local laravel_env="veriscope_ta_dashboard/.env"
     if [ -f "$laravel_env" ]; then
         if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$laravel_env"
+            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$laravel_env"
             echo_info "Updated host $laravel_env"
         else
             echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$laravel_env"
             echo_info "Added WEBHOOK_CLIENT_SECRET to host $laravel_env"
         fi
-        rm -f "${laravel_env}.bak"
     else
         echo_warn "Laravel .env not found at $laravel_env"
     fi
@@ -1531,13 +1533,12 @@ regenerate_webhook_secret() {
     local node_env="veriscope_ta_node/.env"
     if [ -f "$node_env" ]; then
         if grep -q "^WEBHOOK_CLIENT_SECRET=" "$node_env"; then
-            sed -i.bak "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$node_env"
+            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$node_env"
             echo_info "Updated host $node_env"
         else
             echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$node_env"
             echo_info "Added WEBHOOK_CLIENT_SECRET to host $node_env"
         fi
-        rm -f "${node_env}.bak"
     else
         echo_warn "Node.js .env not found at $node_env"
     fi
