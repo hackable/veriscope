@@ -1,695 +1,1025 @@
 # Docker Setup Guide for Veriscope
 
-This document provides comprehensive instructions for running Veriscope using Docker containers.
+This document provides comprehensive instructions for running Veriscope using the microservices Docker architecture.
 
 ## Overview
 
-The Veriscope project uses Docker to containerize the entire application stack, including:
-- Laravel Trust Anchor Dashboard (PHP 8.3 + Nginx)
-- Node.js Trust Anchor Service
-- Nethermind Ethereum Node
-- PostgreSQL Database
-- Redis Server (with RedisBloom module)
-- Job Queue (Horizon)
-- WebSocket Server
+The Veriscope project uses a modern microservices Docker architecture with separate containers for each component:
+
+### Services Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      Docker Compose Setup                     │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌─────────────┐         ┌──────────────┐                   │
+│  │   nginx     │────────▶│     app      │                   │
+│  │  (proxy)    │         │  (Laravel)   │                   │
+│  │  Port 80    │         │   PHP 8.3    │                   │
+│  │  Port 443   │         │              │                   │
+│  └─────────────┘         └──────────────┘                   │
+│         │                        │                            │
+│         │                        ├──────────┐                │
+│         │                        ▼          ▼                │
+│         │                 ┌──────────┐  ┌──────────┐        │
+│         │                 │ postgres │  │  redis   │        │
+│         │                 │ (12)     │  │ (stack)  │        │
+│         │                 └──────────┘  └──────────┘        │
+│         │                        ▲          ▲                │
+│         │                        │          │                │
+│         └──────────────┐         │          │                │
+│                        ▼         │          │                │
+│                 ┌──────────────┐ │          │                │
+│                 │   ta-node    │─┴──────────┘                │
+│                 │  (Node.js)   │                             │
+│                 │   Node 18    │                             │
+│                 └──────────────┘                             │
+│                        │                                      │
+│                        ▼                                      │
+│                 ┌──────────────┐                             │
+│                 │  nethermind  │                             │
+│                 │  (Ethereum)  │                             │
+│                 └──────────────┘                             │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Container Details
+
+| Container | Image | Purpose | Exposed Ports |
+|-----------|-------|---------|---------------|
+| **nginx** | nginx:alpine | Reverse proxy, SSL termination | 80, 443 |
+| **app** | Custom (PHP 8.3, Ubuntu 22.04) | Laravel dashboard & API | Internal only |
+| **ta-node** | Custom (Node 18 Alpine) | Trust Anchor service, Bull Arena | Internal only |
+| **postgres** | postgres:12-alpine | Database | Internal only |
+| **redis** | redis/redis-stack:latest | Cache, queues, RedisBloom | Internal only |
+| **nethermind** | nethermind/nethermind:latest | Ethereum client | Internal only |
+| **certbot** | certbot/certbot:latest | SSL certificates (production) | None |
 
 ## Prerequisites
 
 ### Required Software
-- Docker Engine 20.10 or later
-- Docker Compose (bundled with Docker Desktop)
-- Git
-- At least 8GB RAM available for Docker
-- 50GB free disk space
+- **Docker Engine** 20.10 or later
+- **Docker Compose** V2 or later (bundled with Docker Desktop)
+- **Bash** shell (for management scripts)
+- **Git** for version control
 
 ### System Requirements
-- Ubuntu 22.04 or later (recommended)
-- macOS 11+ with Docker Desktop
-- Windows 10/11 with WSL2 and Docker Desktop
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ veriscope/1.0 Container (systemd-ubuntu:22.04)             │
-│                                                             │
-│  ├─ Nginx (Port 80, 443)                                   │
-│  ├─ PHP 8.3 FPM                                            │
-│  ├─ Laravel Application (/opt/veriscope/veriscope_ta_dashboard) │
-│  ├─ Node.js Service (/opt/veriscope/veriscope_ta_node)    │
-│  ├─ PostgreSQL 12                                          │
-│  ├─ Redis + RedisBloom                                     │
-│  ├─ Nethermind Ethereum Node                              │
-│  └─ Laravel Horizon (Queue Worker)                         │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+- **OS**: Ubuntu 22.04+ (recommended), macOS 11+, Windows 10/11 with WSL2
+- **RAM**: Minimum 8GB, recommended 16GB
+- **Disk**: 50GB free space
+- **CPU**: 4+ cores recommended
 
 ## Quick Start
 
-### 1. Clone the Repository
+### 1. Clone and Configure
 
 ```bash
+# Clone the repository
 git clone <repository-url>
 cd veriscope
-```
 
-### 2. Configure Environment Variables
+# Create environment files
+cp veriscope_ta_dashboard/.env.example veriscope_ta_dashboard/.env
+cp veriscope_ta_node/.env.example veriscope_ta_node/.env
 
-Create and configure the main `.env` file:
+# Edit the root .env file (create if it doesn't exist)
+cat > .env <<EOF
+# Network selection
+VERISCOPE_TARGET=veriscope_testnet
 
-```bash
-cp .env.example .env
-```
+# Database credentials
+POSTGRES_DB=trustanchor
+POSTGRES_USER=trustanchor
+POSTGRES_PASSWORD=your_secure_password_here
 
-Edit `.env` and set the following **mandatory** variables:
-
-```env
-VERISCOPE_SERVICE_HOST=your-domain.example.com
+# Application settings
+VERISCOPE_SERVICE_HOST=localhost
 VERISCOPE_COMMON_NAME="Your Organization Name"
-VERISCOPE_TARGET=veriscope_testnet  # or fed_testnet, fed_mainnet
+
+# Nethermind Stats (optional)
+NETHERMIND_ETHSTATS_ENABLED=true
+NETHERMIND_ETHSTATS_SERVER=wss://fedstats.veriscope.network/api
+NETHERMIND_ETHSTATS_SECRET=Oogongi4
+NETHERMIND_ETHSTATS_CONTACT=
+EOF
 ```
 
-### 3. Build the Docker Image
+### 2. Build Images
 
 ```bash
+# Build all Docker images
 docker-compose build
+
+# Or build specific service
+docker-compose build app
+docker-compose build ta-node
 ```
 
-This builds the `veriscope/1.0` image with all dependencies.
-
-### 4. Start the Container
+### 3. Initialize with Setup Script
 
 ```bash
+# Make scripts executable
+chmod +x docker-scripts/*.sh
+
+# Run the interactive setup
+./docker-scripts/setup-docker.sh
+
+# Follow the menu to:
+# - Check requirements
+# - Setup chain artifacts
+# - Initialize database
+# - Generate secrets
+# - Setup SSL (production only)
+```
+
+### 4. Start Services
+
+```bash
+# Start all services
 docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check service health
+docker-compose ps
 ```
 
-### 5. Run Initial Setup
+### 5. Access the Application
 
-Enter the container and run the setup script:
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope
-sudo ./scripts/setup-vasp.sh
-```
-
-Follow the interactive menu to install all components (option `i`).
-
-## Docker Configuration
-
-### docker-compose.yml
-
-The main Docker Compose configuration includes:
-
-#### Service: `laravel.test`
-- **Image**: `veriscope/1.0`
-- **Base Image**: `jrei/systemd-ubuntu:22.04`
-- **Privileged Mode**: Required for systemd
-- **Ports**:
-  - `80`: HTTP (redirects to HTTPS)
-  - `443`: HTTPS (Nginx + Laravel)
-  - `6001`: WebSocket Server (Laravel WebSockets)
-- **Volumes**:
-  - `./:/opt/veriscope` - Project source code
-  - `/sys/fs/cgroup:/sys/fs/cgroup:ro` - Required for systemd
-
-### Dockerfile
-
-Located at: `/Dockerfile`
-
-**Base Image**: `jrei/systemd-ubuntu:22.04`
-
-**Key Features**:
-- Full systemd support for managing services
-- Service user setup (UID 1000, GID 1000)
-- Automatic execution of setup script on build
-- Exposed ports: 80, 443
-
-## Development Dockerfile
-
-Located at: `/veriscope_ta_dashboard/docker/8.0/Dockerfile`
-
-**Purpose**: Development environment with all PHP extensions and build tools
-
-**Base Image**: `ubuntu:22.04`
-
-**Installed Components**:
-- PHP 8.3 with extensions (see below)
-- Composer (PHP package manager)
-- Node.js LTS + Yarn
-- MySQL client
-
-### PHP 8.3 Extensions Included:
-```
-php8.3-cli      php8.3-dev      php8.3-apcu     php8.3-bcmath
-php8.3-curl     php8.3-imap     php8.3-gd       php8.3-igbinary
-php8.3-imagick  php8.3-intl     php8.3-ldap     php8.3-mbstring
-php8.3-msgpack  php8.3-mysql    php8.3-pgsql    php8.3-readline
-php8.3-redis    php8.3-sqlite3  php8.3-soap     php8.3-xdebug
-php8.3-xml      php8.3-yaml     php8.3-zip
-```
+- **HTTP**: http://localhost (redirects to HTTPS)
+- **HTTPS**: https://localhost (with self-signed cert in development)
+- **Arena UI**: https://localhost/arena/ (Bull queue dashboard)
 
 ## Environment Configuration
 
-### Main Environment File (.env)
+### Network Targets
 
-**Critical Variables**:
+Set `VERISCOPE_TARGET` in your root `.env` file:
 
 ```env
-# Service Configuration
-VERISCOPE_SERVICE_HOST=node.example.com
-VERISCOPE_COMMON_NAME="Example Organization"
-VERISCOPE_TARGET=veriscope_testnet
-
-# Target Options:
-# - veriscope_testnet: Veriscope test network
-# - fed_testnet: Federation test network
-# - fed_mainnet: Federation mainnet (production)
+# Options:
+VERISCOPE_TARGET=veriscope_testnet  # Veriscope test network
+VERISCOPE_TARGET=fed_testnet        # Federation test network
+VERISCOPE_TARGET=fed_mainnet        # Federation mainnet (production)
 ```
 
-### Laravel Environment (.env in veriscope_ta_dashboard)
+### Database Configuration
 
-Auto-generated during setup. Key settings:
+```env
+POSTGRES_DB=trustanchor
+POSTGRES_USER=trustanchor
+POSTGRES_PASSWORD=<secure-password>
+```
+
+These are used by both the postgres container and the application.
+
+### Laravel Application (.env in veriscope_ta_dashboard)
+
+Key settings:
 
 ```env
 APP_NAME="Veriscope TA Dashboard"
-APP_ENV=local
+APP_ENV=local                    # local, production
+APP_DEBUG=true                   # false for production
 APP_URL=https://your-domain.com
-APP_DEBUG=true
 
 DB_CONNECTION=pgsql
-DB_HOST=localhost
+DB_HOST=postgres                 # Docker service name
 DB_PORT=5432
 DB_DATABASE=trustanchor
 DB_USERNAME=trustanchor
-DB_PASSWORD=<auto-generated>
+DB_PASSWORD=<same-as-root-env>
 
-CACHE_DRIVER=redis
-QUEUE_CONNECTION=redis
-SESSION_DRIVER=database
-
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=null
+REDIS_HOST=redis                 # Docker service name
 REDIS_PORT=6379
+
+QUEUE_CONNECTION=redis
+CACHE_DRIVER=redis
+SESSION_DRIVER=database
 ```
 
-## Container Management
+### Node.js Service (.env in veriscope_ta_node)
 
-### Starting Services
+Key settings:
+
+```env
+DB_HOST=postgres                 # Docker service name
+DB_PORT=5432
+DB_NAME=trustanchor
+DB_USER=trustanchor
+DB_PASS=<same-as-root-env>
+
+REDIS_HOST=redis                 # Docker service name
+REDIS_PORT=6379
+
+NETHERMIND_URL=http://nethermind:8545
+
+TRUST_ANCHOR_ACCOUNT=<generated-during-setup>
+TRUST_ANCHOR_PK=<generated-during-setup>
+TRUST_ANCHOR_PREFNAME="Your Organization Name"
+```
+
+## Docker Management Scripts
+
+### setup-docker.sh - Main Management Script
+
+**Location**: `docker-scripts/setup-docker.sh`
+
+Interactive menu for all common operations:
 
 ```bash
-# Start in background
-docker-compose up -d
+# Interactive mode
+./docker-scripts/setup-docker.sh
 
-# Start with logs
-docker-compose up
-
-# Start specific service
-docker-compose up -d laravel.test
+# Command line mode
+./docker-scripts/setup-docker.sh <command>
 ```
 
-### Stopping Services
+**Available Commands**:
+
+#### Setup & Installation
+- `check` - Check Docker requirements
+- `build` - Build Docker images
+- `start` - Start all services
+- `stop` - Stop all services
+- `restart` - Restart all services
+- `status` - Show service status
+
+#### Chain Setup
+- `setup-chain` - Copy network artifacts to Docker volume
+- `switch-chain` - Switch between networks (veriscope_testnet/fed_testnet/fed_mainnet)
+
+#### Database Operations
+- `db-setup` - Initialize database
+- `db-migrate` - Run Laravel migrations
+- `db-seed` - Seed database
+- `db-backup` - Backup database
+- `db-restore` - Restore database
+
+#### Secret Management
+- `generate-secrets` - Generate application secrets
+- `regenerate-webhook` - Regenerate webhook secrets
+- `create-admin` - Create admin user
+
+#### SSL/TLS
+- `ssl-setup` - Obtain SSL certificate (production)
+- `ssl-renew` - Renew SSL certificate
+
+### Other Utility Scripts
+
+#### exec.sh - Container Shell Access
 
 ```bash
-# Stop all services
-docker-compose down
+# Access app container
+./docker-scripts/exec.sh app
 
-# Stop and remove volumes (⚠️ data loss)
-docker-compose down -v
+# Access ta-node container
+./docker-scripts/exec.sh ta-node
+
+# Run command in container
+./docker-scripts/exec.sh app php artisan --version
 ```
 
-### Viewing Logs
+#### logs.sh - View Logs
 
 ```bash
 # All logs
-docker-compose logs
+./docker-scripts/logs.sh
+
+# Specific service
+./docker-scripts/logs.sh app
+./docker-scripts/logs.sh ta-node
 
 # Follow logs
-docker-compose logs -f
-
-# Specific service logs
-docker-compose logs -f laravel.test
-
-# Inside container - systemd services
-docker exec -it veriscope_laravel.test_1 journalctl -fu nethermind
-docker exec -it veriscope_laravel.test_1 journalctl -fu ta
-docker exec -it veriscope_laravel.test_1 journalctl -fu ta-node-1
+./docker-scripts/logs.sh -f app
 ```
 
-### Accessing the Container
+#### backup-restore.sh - Backup Operations
 
 ```bash
-# Interactive bash shell
-docker exec -it veriscope_laravel.test_1 bash
+# Full backup
+./docker-scripts/backup-restore.sh backup
 
-# Run command as service user
-docker exec -it veriscope_laravel.test_1 su - serviceuser
+# Restore from backup
+./docker-scripts/backup-restore.sh restore /path/to/backup
+
+# List backups
+./docker-scripts/backup-restore.sh list
 ```
 
-### Restarting Services Inside Container
+## Service-Specific Operations
+
+### Laravel Application (app)
 
 ```bash
-docker exec -it veriscope_laravel.test_1 bash
+# Run artisan commands
+docker-compose exec app php artisan migrate
+docker-compose exec app php artisan db:seed
+docker-compose exec app php artisan cache:clear
+docker-compose exec app php artisan config:clear
+docker-compose exec app php artisan route:list
 
-# Restart all services
-systemctl restart nethermind ta ta-wss ta-schedule ta-node-1 nginx postgresql redis-server horizon
+# Install/update PHP dependencies
+docker-compose exec app composer install
+docker-compose exec app composer update
 
-# Check service status
-systemctl status nethermind ta ta-wss ta-schedule ta-node-1 nginx postgresql redis-server horizon
-
-# Individual service restart
-systemctl restart nginx
-systemctl restart php8.3-fpm
+# Install/update frontend dependencies
+docker-compose exec app npm install
+docker-compose exec app npm run production
 ```
 
-## Service Ports
+### Node.js Service (ta-node)
 
-| Port | Service | Description |
-|------|---------|-------------|
-| 80 | HTTP | Redirects to HTTPS |
-| 443 | HTTPS | Nginx + Laravel Dashboard |
-| 6001 | WebSocket | Laravel WebSockets |
-| 8545 | Nethermind RPC | Ethereum JSON-RPC (internal) |
-| 30303 | Nethermind P2P | Peer discovery (internal) |
-| 5432 | PostgreSQL | Database (internal) |
-| 6379 | Redis | Cache/Queue (internal) |
-| 8080 | Arena | Bull Queue Dashboard (internal) |
+```bash
+# View Node logs
+docker-compose logs -f ta-node
 
-**Note**: Only ports 80, 443, and 6001 are exposed to the host.
+# Install/update dependencies
+docker-compose exec ta-node npm install
 
-## Volume Mounts
+# Restart service
+docker-compose restart ta-node
+```
 
-### Source Code Mount
+### PostgreSQL Database (postgres)
+
+```bash
+# Access PostgreSQL CLI
+docker-compose exec postgres psql -U trustanchor -d trustanchor
+
+# Backup database
+docker-compose exec postgres pg_dump -U trustanchor trustanchor > backup.sql
+
+# Restore database
+docker-compose exec -T postgres psql -U trustanchor trustanchor < backup.sql
+
+# Check database size
+docker-compose exec postgres psql -U trustanchor -d trustanchor -c "SELECT pg_database_size('trustanchor');"
+```
+
+### Redis (redis)
+
+```bash
+# Access Redis CLI
+docker-compose exec redis redis-cli
+
+# Check Redis info
+docker-compose exec redis redis-cli INFO
+
+# List RedisBloom modules
+docker-compose exec redis redis-cli MODULE LIST
+
+# Flush all data (⚠️ destructive)
+docker-compose exec redis redis-cli FLUSHALL
+```
+
+### Nethermind (nethermind)
+
+```bash
+# View Nethermind logs
+docker-compose logs -f nethermind
+
+# Check sync status
+docker-compose exec nethermind curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}'
+
+# Get block number
+docker-compose exec nethermind curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+```
+
+### Nginx (nginx)
+
+```bash
+# Test nginx configuration
+docker-compose exec nginx nginx -t
+
+# Reload nginx (after config changes)
+docker-compose exec nginx nginx -s reload
+
+# View access logs
+docker-compose logs nginx | grep "GET\|POST"
+```
+
+## Volume Management
+
+### Named Volumes
+
+The setup uses Docker named volumes for persistent data:
+
+```bash
+# List all volumes
+docker volume ls | grep veriscope
+
+# Inspect volume
+docker volume inspect veriscope_postgres_data
+
+# View volume contents
+docker run --rm -v veriscope_artifacts:/data alpine ls -la /data
+
+# Backup volume
+docker run --rm -v veriscope_postgres_data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/postgres-backup.tar.gz -C /data .
+
+# Restore volume
+docker run --rm -v veriscope_postgres_data:/data -v $(pwd):/backup alpine \
+  tar xzf /backup/postgres-backup.tar.gz -C /data
+```
+
+### Volume Locations
+
+| Volume | Purpose | Size (typical) |
+|--------|---------|----------------|
+| `postgres_data` | Database files | 1-10 GB |
+| `redis_data` | Redis persistence | 100 MB - 1 GB |
+| `nethermind_data` | Blockchain data | 10-50 GB |
+| `veriscope_artifacts` | Contract artifacts | 1 MB |
+| `app_storage` | Laravel storage | 100 MB - 1 GB |
+| `app_bootstrap_cache` | Laravel cache | 10 MB |
+| `app_public` | Public assets | 50 MB |
+| `certbot_conf` | SSL certificates | 10 MB |
+| `certbot_www` | Certbot challenges | 1 MB |
+
+## Networking
+
+### Service Communication
+
+Services communicate via the `veriscope` Docker network using service names:
+
+**From app (Laravel)**:
+- Database: `postgres:5432`
+- Redis: `redis:6379`
+- Nethermind: `http://nethermind:8545`
+
+**From ta-node**:
+- Database: `postgres:5432`
+- Redis: `redis:6379`
+- Nethermind: `http://nethermind:8545`
+
+**From nginx**:
+- Laravel app: `http://app:80`
+- Node service: `http://ta-node:4000`
+
+### Port Mapping
+
+Only nginx exposes ports to the host:
+
 ```yaml
-- '.:/opt/veriscope'
+ports:
+  - "80:80"    # HTTP (redirects to HTTPS)
+  - "443:443"  # HTTPS
 ```
-- **Purpose**: Live code updates during development
-- **Type**: Bind mount
-- **Permissions**: Owned by service user (UID 1000)
 
-### cgroup Mount (Required for systemd)
-```yaml
-- '/sys/fs/cgroup:/sys/fs/cgroup:ro'
-```
-- **Purpose**: systemd process management
-- **Type**: Read-only bind mount
-- **Required**: Yes (for systemd operation)
+All other services are internal to the Docker network.
 
-## Building Images
-
-### Production Image
+### Network Inspection
 
 ```bash
-# Build main application image
+# List networks
+docker network ls
+
+# Inspect veriscope network
+docker network inspect veriscope
+
+# Show connected containers
+docker network inspect veriscope --format '{{range .Containers}}{{.Name}} - {{.IPv4Address}}{{"\n"}}{{end}}'
+```
+
+## Building and Updating
+
+### Build Process
+
+#### Application Image (app)
+
+**Dockerfile**: `veriscope_ta_dashboard/docker/8.0/Dockerfile`
+
+**Base**: Ubuntu 22.04
+**Runtime**: PHP 8.3 with extensions
+**Build**: Copies Laravel code at build time
+
+```bash
+# Build app image
+docker-compose build app
+
+# Build with no cache
+docker-compose build --no-cache app
+
+# View build logs
+docker-compose build --progress=plain app
+```
+
+**PHP 8.3 Extensions Included**:
+```
+php8.3-apcu      php8.3-bcmath    php8.3-cli       php8.3-curl
+php8.3-dev       php8.3-gd        php8.3-igbinary  php8.3-imagick
+php8.3-imap      php8.3-intl      php8.3-ldap      php8.3-mbstring
+php8.3-msgpack   php8.3-mysql     php8.3-pgsql     php8.3-readline
+php8.3-redis     php8.3-soap      php8.3-sqlite3   php8.3-xdebug
+php8.3-xml       php8.3-yaml      php8.3-zip
+```
+
+#### Node Service Image (ta-node)
+
+**Dockerfile**: `veriscope_ta_node/Dockerfile`
+
+**Base**: Node 18 Alpine
+**Build**: Installs dependencies, copies code
+
+```bash
+# Build ta-node image
+docker-compose build ta-node
+
+# Build with no cache
+docker-compose build --no-cache ta-node
+```
+
+### Updating the Application
+
+After pulling new code:
+
+```bash
+# 1. Stop services
+docker-compose down
+
+# 2. Rebuild images with new code
 docker-compose build
 
-# Build without cache
-docker-compose build --no-cache
+# 3. Start services
+docker-compose up -d
 
-# Build with specific tag
-docker build -t veriscope/1.0:latest -f Dockerfile .
+# 4. Run migrations (if needed)
+docker-compose exec app php artisan migrate
+
+# 5. Clear caches
+docker-compose exec app php artisan cache:clear
+docker-compose exec app php artisan config:clear
+docker-compose exec app php artisan view:clear
 ```
 
-### Development Image
+### Switching Networks
+
+To change between veriscope_testnet, fed_testnet, and fed_mainnet:
 
 ```bash
-# Build development image
-cd veriscope_ta_dashboard/docker/8.0
-docker build -t veriscope/dev:php8.3 .
-```
+# 1. Update .env
+echo "VERISCOPE_TARGET=fed_testnet" > .env
 
-## Updating Dependencies
+# 2. Run setup script
+./docker-scripts/setup-docker.sh setup-chain
 
-### Update PHP Dependencies
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "composer update"
-```
-
-### Update Node.js Dependencies
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-
-# Dashboard dependencies
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "npm install"
-
-# Node service dependencies
-cd /opt/veriscope/veriscope_ta_node
-su serviceuser -c "npm install"
-```
-
-### Rebuild Frontend Assets
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "npm run production"
-```
-
-## Database Management
-
-### Run Migrations
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "php artisan migrate"
-```
-
-### Database Backup
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-su postgres -c "pg_dump trustanchor > /opt/veriscope/backup-$(date +%Y%m%d).sql"
-```
-
-### Database Restore
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-su postgres -c "psql trustanchor < /opt/veriscope/backup-YYYYMMDD.sql"
+# 3. Restart ta-node
+docker-compose restart ta-node nethermind
 ```
 
 ## SSL/TLS Certificates
 
-Certificates are managed by Let's Encrypt (certbot) inside the container.
+### Development (Self-Signed)
 
-### Initial Certificate Setup
-
-The setup script automatically obtains certificates using certbot:
+For local development, use self-signed certificates:
 
 ```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope
-sudo ./scripts/setup-vasp.sh
-# Choose option 4: Obtain/renew SSL certificate
+# Generate self-signed certificate
+docker-compose run --rm certbot certonly --standalone \
+  --register-unsafely-without-email \
+  -d localhost
 ```
 
-### Manual Certificate Renewal
+### Production (Let's Encrypt)
+
+For production with a real domain:
 
 ```bash
-docker exec -it veriscope_laravel.test_1 bash
-systemctl stop nginx
-certbot renew
-systemctl start nginx
+# 1. Ensure domain points to your server
+# 2. Stop nginx temporarily
+docker-compose stop nginx
+
+# 3. Obtain certificate
+docker-compose run --rm certbot certonly --standalone \
+  --agree-tos \
+  --email your@email.com \
+  -d your-domain.com
+
+# 4. Start nginx
+docker-compose start nginx
 ```
 
-### Certificate Locations
+### Auto-Renewal (Production)
 
-- Certificate: `/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem`
-- Private Key: `/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem`
+Enable auto-renewal by uncommenting in `docker-compose.yml`:
+
+```yaml
+certbot:
+  # Uncomment for auto-renewal:
+  entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+```
+
+### Manual Renewal
+
+```bash
+docker-compose run --rm certbot renew
+docker-compose exec nginx nginx -s reload
+```
+
+## Monitoring and Logs
+
+### View Logs
+
+```bash
+# All services
+docker-compose logs
+
+# Follow all logs
+docker-compose logs -f
+
+# Specific service
+docker-compose logs app
+docker-compose logs ta-node
+docker-compose logs postgres
+
+# Last N lines
+docker-compose logs --tail=100 app
+
+# Since timestamp
+docker-compose logs --since 2024-01-01T00:00:00 app
+```
+
+### Health Checks
+
+```bash
+# Check container health
+docker-compose ps
+
+# Inspect health status
+docker inspect veriscope-app --format='{{.State.Health.Status}}'
+
+# Health check details
+docker inspect veriscope-postgres --format='{{json .State.Health}}' | jq
+```
+
+### Resource Usage
+
+```bash
+# Container stats
+docker stats
+
+# Specific containers
+docker stats veriscope-app veriscope-postgres veriscope-nethermind
+
+# Disk usage
+docker system df
+
+# Detailed disk usage
+docker system df -v
+```
+
+### Arena Queue Dashboard
+
+Access Bull Arena at:
+
+- **URL**: `https://your-domain.com/arena/`
+- **Purpose**: Monitor job queues
+- **Features**: View jobs, retry failed jobs, clean queues
 
 ## Troubleshooting
 
 ### Container Won't Start
 
 ```bash
-# Check logs
-docker-compose logs
+# Check container logs
+docker-compose logs <service-name>
 
-# Check Docker daemon
-sudo systemctl status docker
+# Check health status
+docker-compose ps
 
-# Check available resources
-docker system df
-docker system prune  # Clean up if needed
-```
+# Inspect container
+docker inspect veriscope-<service-name>
 
-### Service Fails Inside Container
-
-```bash
-# Check service status
-docker exec -it veriscope_laravel.test_1 systemctl status <service-name>
-
-# View service logs
-docker exec -it veriscope_laravel.test_1 journalctl -u <service-name> -n 50
-
-# Restart service
-docker exec -it veriscope_laravel.test_1 systemctl restart <service-name>
-```
-
-### Permission Issues
-
-```bash
-# Fix ownership
-docker exec -it veriscope_laravel.test_1 bash
-chown -R serviceuser:www-data /opt/veriscope/veriscope_ta_dashboard
-chmod -R 0770 /opt/veriscope/veriscope_ta_dashboard/storage
+# Remove and recreate
+docker-compose rm -f <service-name>
+docker-compose up -d <service-name>
 ```
 
 ### Database Connection Issues
 
 ```bash
-# Check PostgreSQL is running
-docker exec -it veriscope_laravel.test_1 systemctl status postgresql
+# Test database connection
+docker-compose exec app php artisan tinker
+>>> DB::connection()->getPdo();
 
-# Check database exists
-docker exec -it veriscope_laravel.test_1 su postgres -c "psql -l"
+# Check postgres is running
+docker-compose ps postgres
 
-# Test connection
-docker exec -it veriscope_laravel.test_1 su postgres -c "psql trustanchor"
-```
+# Check postgres logs
+docker-compose logs postgres
 
-### Port Already in Use
-
-```bash
-# Find what's using port 80/443
-sudo lsof -i :80
-sudo lsof -i :443
-
-# Change ports in docker-compose.yml
-ports:
-  - '8080:80'
-  - '8443:443'
-```
-
-### Nethermind Won't Sync
-
-```bash
-# Check Nethermind logs
-docker exec -it veriscope_laravel.test_1 journalctl -u nethermind -f
-
-# Check configuration
-docker exec -it veriscope_laravel.test_1 cat /opt/nm/config.cfg
-
-# Refresh static nodes
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope
-sudo ./scripts/setup-vasp.sh
-# Choose option 8: Update static node list
+# Verify credentials match
+grep DB_ veriscope_ta_dashboard/.env
+docker-compose exec postgres env | grep POSTGRES
 ```
 
 ### Redis Connection Issues
 
 ```bash
-# Check Redis is running
-docker exec -it veriscope_laravel.test_1 systemctl status redis-server
-
 # Test Redis connection
-docker exec -it veriscope_laravel.test_1 redis-cli ping
+docker-compose exec app php artisan tinker
+>>> Redis::ping();
 
-# Check RedisBloom module loaded
-docker exec -it veriscope_laravel.test_1 redis-cli MODULE LIST
+# Test from ta-node
+docker-compose exec ta-node node -e "
+const Redis = require('ioredis');
+const redis = new Redis({host: 'redis', port: 6379});
+redis.ping().then(() => console.log('PONG')).catch(console.error);
+"
+
+# Check Redis logs
+docker-compose logs redis
+```
+
+### Nethermind Sync Issues
+
+```bash
+# Check sync status
+docker-compose exec app php artisan nethermind:sync-status
+
+# View Nethermind logs
+docker-compose logs -f nethermind
+
+# Check peers
+docker-compose exec nethermind curl -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}'
+
+# Restart Nethermind
+docker-compose restart nethermind
+```
+
+### Port Conflicts
+
+```bash
+# Check what's using port 80/443
+sudo lsof -i :80
+sudo lsof -i :443
+
+# Change ports in docker-compose.yml
+ports:
+  - "8080:80"
+  - "8443:443"
+
+# Recreate nginx
+docker-compose up -d nginx
+```
+
+### Permission Issues
+
+```bash
+# Fix Laravel storage permissions
+docker-compose exec app chmod -R 775 storage bootstrap/cache
+docker-compose exec app chown -R www-data:www-data storage bootstrap/cache
+```
+
+### Out of Disk Space
+
+```bash
+# Clean up unused resources
+docker system prune -a --volumes
+
+# Remove specific volumes (⚠️ data loss)
+docker volume rm veriscope_redis_data
+
+# Check volume sizes
+docker system df -v
+```
+
+### Reset Everything
+
+```bash
+# ⚠️ WARNING: This will delete ALL data
+
+# Stop and remove containers, volumes
+docker-compose down -v
+
+# Remove images
+docker rmi $(docker images 'veriscope*' -q)
+
+# Clean system
+docker system prune -a --volumes
+
+# Start fresh
+docker-compose build
+docker-compose up -d
+./docker-scripts/setup-docker.sh
 ```
 
 ## Performance Tuning
 
-### Increase PHP Memory Limit
+### PHP-FPM Configuration
 
-Edit `/opt/veriscope/veriscope_ta_dashboard/docker/8.0/php.ini`:
+Edit `veriscope_ta_dashboard/docker/8.0/www.conf`:
 
 ```ini
-memory_limit = 512M
-```
-
-Rebuild the image.
-
-### Optimize PHP-FPM
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-vi /etc/php/8.3/fpm/pool.d/www.conf
-
-# Adjust these values based on your resources:
 pm = dynamic
 pm.max_children = 50
 pm.start_servers = 10
 pm.min_spare_servers = 5
 pm.max_spare_servers = 20
-
-systemctl restart php8.3-fpm
+pm.max_requests = 500
 ```
+
+Rebuild image after changes.
 
 ### PostgreSQL Tuning
 
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-vi /etc/postgresql/12/main/postgresql.conf
+Create `docker-compose.override.yml`:
 
-# Adjust based on available RAM:
-shared_buffers = 256MB
-effective_cache_size = 1GB
-work_mem = 4MB
-
-systemctl restart postgresql
+```yaml
+services:
+  postgres:
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=200
 ```
 
-## Backup and Restore
+### Redis Configuration
 
-### Full Backup Script
+Adjust Redis memory in `docker-compose.yml`:
 
-```bash
-#!/bin/bash
-BACKUP_DIR="/opt/veriscope/backups/$(date +%Y%m%d)"
+```yaml
+redis:
+  environment:
+    - REDIS_ARGS=--maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+```
 
-docker exec veriscope_laravel.test_1 bash -c "
-    mkdir -p $BACKUP_DIR
+### Resource Limits
 
-    # Database backup
-    su postgres -c 'pg_dump trustanchor > $BACKUP_DIR/database.sql'
+Set resource limits in `docker-compose.yml`:
 
-    # Laravel storage
-    tar -czf $BACKUP_DIR/storage.tar.gz /opt/veriscope/veriscope_ta_dashboard/storage
-
-    # Nethermind data
-    tar -czf $BACKUP_DIR/nethermind.tar.gz /opt/nm/nethermind_db
-
-    # Environment files
-    cp /opt/veriscope/.env $BACKUP_DIR/
-    cp /opt/veriscope/veriscope_ta_dashboard/.env $BACKUP_DIR/dashboard.env
-    cp /opt/veriscope/veriscope_ta_node/.env $BACKUP_DIR/node.env
-"
-
-echo "Backup completed: $BACKUP_DIR"
+```yaml
+services:
+  app:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
 ```
 
 ## Security Best Practices
 
-1. **Don't expose internal ports** - Only expose necessary ports (80, 443, 6001)
-2. **Use secrets** - Store sensitive data in Docker secrets or encrypted files
-3. **Regular updates** - Keep base images and dependencies updated
-4. **Scan images** - Use `docker scan` to check for vulnerabilities
-5. **Limit privileges** - Run services as non-root user when possible
-6. **Network isolation** - Use Docker networks to isolate services
-7. **Read-only mounts** - Use `:ro` flag where appropriate
-8. **Resource limits** - Set memory and CPU limits in docker-compose.yml
+### 1. Secrets Management
 
-### Example with Resource Limits
+- ✅ Use strong passwords for database
+- ✅ Never commit `.env` files
+- ✅ Use Docker secrets for production
+- ✅ Rotate secrets regularly
 
-```yaml
-services:
-  laravel.test:
-    image: veriscope/1.0
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
-        reservations:
-          cpus: '2'
-          memory: 4G
-```
+### 2. Network Security
 
-## Upgrading
+- ✅ Only expose necessary ports (80, 443)
+- ✅ Use internal Docker network for service communication
+- ✅ Enable SSL/TLS in production
+- ✅ Configure firewall rules
 
-### Upgrade to New Version
+### 3. Container Security
 
-```bash
-# Pull latest code
-git pull origin main
+- ✅ Run as non-root user where possible
+- ✅ Keep base images updated
+- ✅ Scan images for vulnerabilities
+- ✅ Limit container capabilities
 
-# Rebuild image
-docker-compose build --no-cache
+### 4. Data Protection
 
-# Stop current container
-docker-compose down
-
-# Start new container
-docker-compose up -d
-
-# Run migrations inside container
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "php artisan migrate"
-```
-
-### Upgrade PHP Version
-
-This has been completed (PHP 8.3). To verify:
-
-```bash
-docker exec -it veriscope_laravel.test_1 php -v
-```
-
-## Development Workflow
-
-### Live Coding
-
-Changes to code in the mounted volume are immediately available:
-
-```bash
-# Edit files locally
-vim veriscope_ta_dashboard/app/Http/Controllers/HomeController.php
-
-# Changes are immediately reflected (for PHP)
-# For frontend assets, rebuild:
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-su serviceuser -c "npm run development"
-```
-
-### Running Tests
-
-```bash
-docker exec -it veriscope_laravel.test_1 bash
-cd /opt/veriscope/veriscope_ta_dashboard
-
-# PHP tests
-su serviceuser -c "php artisan test"
-
-# JavaScript tests
-su serviceuser -c "npm run test-js"
-```
-
-### Debug Mode
-
-Enable debug mode in `.env`:
-
-```env
-APP_DEBUG=true
-APP_ENV=local
-```
-
-View detailed error messages in browser and logs.
+- ✅ Regular backups
+- ✅ Encrypt sensitive data
+- ✅ Use volume encryption if available
+- ✅ Test restore procedures
 
 ## Production Deployment
 
 ### Production Checklist
 
-- [ ] Set `APP_ENV=production` in `.env`
-- [ ] Set `APP_DEBUG=false` in `.env`
-- [ ] Use strong database passwords
-- [ ] Configure SSL certificates
-- [ ] Set up automated backups
-- [ ] Configure log rotation
-- [ ] Set up monitoring (optional)
-- [ ] Enable firewall rules
+- [ ] Set `APP_ENV=production` in Laravel .env
+- [ ] Set `APP_DEBUG=false`
+- [ ] Use strong database password
+- [ ] Obtain SSL certificate from Let's Encrypt
+- [ ] Enable certbot auto-renewal
+- [ ] Configure automated backups
+- [ ] Set up log rotation
+- [ ] Configure monitoring
+- [ ] Enable firewall
 - [ ] Review security settings
 - [ ] Test disaster recovery
+- [ ] Document access procedures
 
-### Production Environment Variables
+### Production docker-compose.override.yml
 
-```env
-APP_ENV=production
-APP_DEBUG=false
-LOG_LEVEL=warning
-SESSION_SECURE_COOKIE=true
+Create `docker-compose.override.yml` for production:
+
+```yaml
+services:
+  app:
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    restart: unless-stopped
+
+  ta-node:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  redis:
+    restart: unless-stopped
+
+  nethermind:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+  nginx:
+    restart: unless-stopped
+
+  certbot:
+    profiles: []  # Enable certbot in production
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 ```
+
+### Backup Strategy
+
+```bash
+# Daily backup script
+#!/bin/bash
+BACKUP_DIR="/backups/$(date +%Y%m%d)"
+mkdir -p $BACKUP_DIR
+
+# Database
+docker-compose exec -T postgres pg_dump -U trustanchor trustanchor > $BACKUP_DIR/database.sql
+
+# Volumes
+docker run --rm -v veriscope_app_storage:/data -v $BACKUP_DIR:/backup alpine \
+  tar czf /backup/app-storage.tar.gz -C /data .
+
+# Keep last 7 days
+find /backups -type d -mtime +7 -exec rm -rf {} \;
+```
+
+## Legacy Monolithic Setup
+
+This project previously used a monolithic systemd-based Docker container. If you need to use the legacy setup:
+
+**Container**: Single `veriscope/1.0` container with systemd
+**Dockerfile**: `/Dockerfile` (systemd-ubuntu:22.04)
+**Setup Script**: `scripts/setup-vasp.sh`
+**docker-compose**: Uses the old laravel.test service
+
+See `scripts/setup-vasp.sh` for the monolithic setup instructions.
+
+## Version Information
+
+**Document Version**: 2.0 - Microservices Architecture
+**Last Updated**: 2024-11-12
+**Docker Compose Version**: 3.8+
+**Architecture**: Microservices
+
+### Software Versions
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| PHP | 8.3 | Updated from 8.0/8.2 |
+| Node.js | 18 | Alpine-based |
+| Python (Lambda) | 3.11 | Updated from 3.8 |
+| Ubuntu | 22.04 | Updated from 20.04 |
+| PostgreSQL | 12 | Alpine-based |
+| Redis | Latest | redis-stack with RedisBloom |
+| Nginx | Latest | Alpine-based |
+| Nethermind | Latest | Official image |
+| Laravel | 11.0 | - |
+| axios | 1.6.0 | Updated from 0.21.4 |
 
 ## Additional Resources
 
@@ -697,20 +1027,19 @@ SESSION_SECURE_COOKIE=true
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [Laravel Documentation](https://laravel.com/docs)
 - [Nethermind Documentation](https://docs.nethermind.io/)
+- [Redis Documentation](https://redis.io/docs/)
+- [docker-scripts/README.md](docker-scripts/README.md) - Detailed script documentation
 
 ## Support
 
 For issues or questions:
-1. Check the Troubleshooting section above
+
+1. Check the Troubleshooting section
 2. Review container logs: `docker-compose logs`
-3. Check service status inside container
-4. Consult project documentation
+3. Check service status: `docker-compose ps`
+4. Review docker-scripts/README.md for script details
+5. Consult project documentation
 
 ---
 
-**Version**: 4.5.0
-**Last Updated**: 2025-11-10
-**Docker Image**: veriscope/1.0
-**Base OS**: Ubuntu 22.04
-**PHP Version**: 8.3
-**Python Version**: 3.11
+**Migration Note**: This documentation reflects the microservices architecture introduced in November 2024. The previous monolithic systemd-based setup is still available via the `Dockerfile` and `scripts/setup-vasp.sh` for bare-metal deployments.
