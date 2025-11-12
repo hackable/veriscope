@@ -26,6 +26,12 @@ module.exports = function(job) {
       // if is error
       if (error) {
         reject(new Error(error));
+      } else if (result.error) {
+        // Handle JSON-RPC errors (e.g., receipt not found)
+        reject(new Error(`JSON-RPC Error ${result.error.code}: ${result.error.message}`));
+      } else if (!result.result || !result.result[0]) {
+        // Handle missing or empty trace data
+        reject(new Error('Trace data not available for transaction'));
       } else {
 
         let parsed = tasInterface.parseTransaction({

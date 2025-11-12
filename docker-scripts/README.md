@@ -9,6 +9,61 @@ This directory contains utility scripts for managing Veriscope using Docker Comp
 - Bash shell
 - Git
 
+## Production Workflow
+
+**Important**: This Docker setup uses a production-ready isolated approach:
+
+- Application code is **copied into Docker images** at build time
+- Host filesystem remains **completely clean** - no modifications by containers
+- Configuration files (`.env`) are read via env_file directive
+- Network-specific artifacts are stored in **Docker volume** (not visible on host)
+- All writable data persisted in named volumes (postgres_data, redis_data, nethermind_data, veriscope_artifacts, app_storage, app_bootstrap_cache)
+
+**Benefits:**
+- Zero host filesystem pollution
+- Clean separation between host and containers
+- Consistent deployments
+- Version control friendly
+- Production-ready security
+
+**Workflow:**
+```bash
+# Build images with application code
+docker-compose build
+
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+docker-compose logs -f ta-node
+
+# After code changes: rebuild and restart
+docker-compose build
+docker-compose up -d
+```
+
+**Switching networks:**
+```bash
+# Update VERISCOPE_TARGET in .env
+echo "VERISCOPE_TARGET=fed_testnet" >> .env
+
+# Run setup to copy new network artifacts to Docker volume
+./docker-scripts/setup-docker.sh setup-chain
+
+# Restart ta-node to use new artifacts
+docker-compose restart ta-node
+```
+
+**Inspecting artifacts (if needed):**
+```bash
+# List artifacts in Docker volume
+docker run --rm -v veriscope_artifacts:/artifacts alpine ls -la /artifacts
+
+# View a specific artifact file
+docker run --rm -v veriscope_artifacts:/artifacts alpine cat /artifacts/SomeContract.json
+```
+
 ## Quick Start
 
 ### Initial Setup
@@ -253,17 +308,16 @@ cp .env.example .env
 # This will automatically generate PostgreSQL credentials
 
 # 4. Start services (Nginx enabled by default on port 80)
-# Automatically uses docker-compose.nethermind.yml if it exists
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.yml up -d
 
-# OR use the setup script (automatically includes Nethermind config)
+# OR use the setup script
 ./docker-scripts/setup-docker.sh start
 
 # 5. (Optional) Setup SSL for production deployment
 # See "SSL Certificate and Nginx Setup" section for details
 ./docker-scripts/setup-docker.sh obtain-ssl
 ./docker-scripts/setup-docker.sh setup-nginx
-# Then manually update docker-compose.dev.yml volumes
+# Then manually update docker-compose.yml volumes
 
 # 6. Create admin user (if not done in setup)
 ./docker-scripts/setup-docker.sh create-admin
@@ -291,11 +345,11 @@ The setup script automatically generates secure PostgreSQL credentials on first 
 **After generating credentials:**
 ```bash
 # Recreate postgres container with new password
-docker-compose -f docker-compose.dev.yml down postgres
-docker-compose -f docker-compose.dev.yml up -d postgres
+docker-compose -f docker-compose.yml down postgres
+docker-compose -f docker-compose.yml up -d postgres
 
 # Recreate app container to pick up new credentials
-docker-compose -f docker-compose.dev.yml up -d --force-recreate app
+docker-compose -f docker-compose.yml up -d --force-recreate app
 ```
 
 ### Chain Configuration (Network Selection)
@@ -319,19 +373,14 @@ Set `VERISCOPE_TARGET` in your root `.env` file to one of:
   - `veriscope_testnet` → wss://fedstats.veriscope.network/api (secret: Oogongi4)
   - `fed_testnet` → wss://stats.testnet.shyft.network/api (secret: Ish9phieph)
   - `fed_mainnet` → wss://stats.shyft.network/api (secret: uL4tohChia)
-- Updates `.env` with Nethermind environment variables
-- **Creates `docker-compose.nethermind.yml`** - A docker-compose override file with network-specific Nethermind configuration
+- Updates `.env` with Nethermind environment variables (used by docker-compose.yml)
 - Copies chain-specific contract artifacts from `chains/$VERISCOPE_TARGET/artifacts/` to `veriscope_ta_node/artifacts/`
 - Creates `veriscope_ta_node/.env` from chain template if it doesn't exist
 - Copies Nethermind configuration (`shyftchainspec.json`, `static-nodes.json`) if Nethermind directory exists
 - Preserves existing configurations (won't overwrite `veriscope_ta_node/.env`)
 
-**Nethermind Override File:**
-The script generates `docker-compose.nethermind.yml` which contains network-specific Nethermind environment variables. This keeps `docker-compose.dev.yml` clean and makes network switching easier. Use both files when starting services:
-```bash
-# Start all services with Nethermind configured for selected network
-docker-compose -f docker-compose.dev.yml -f docker-compose.nethermind.yml up -d
-```
+**Nethermind Configuration:**
+The Nethermind environment variables are set in the root `.env` file and automatically used by `docker-compose.yml`. No additional override files are needed.
 
 **Example:**
 ```bash
@@ -344,12 +393,8 @@ echo "VERISCOPE_TARGET=veriscope_testnet" >> .env
 # 3. Generate Trust Anchor keypair (see next section)
 ./docker-scripts/setup-docker.sh create-sealer
 
-# 4. Configure organization name in veriscope_ta_node/.env
-# Edit TRUST_ANCHOR_PREFNAME="Your Organization Name"
-
-# 5. Restart services with Nethermind override
-docker-compose -f docker-compose.dev.yml -f docker-compose.nethermind.yml up -d nethermind
-docker-compose -f docker-compose.dev.yml restart ta-node
+# 4. Start or restart services to apply configuration
+docker-compose -f docker-compose.yml up -d nethermind ta-node
 ```
 
 ### Refreshing Static Nodes from Ethstats
@@ -509,7 +554,7 @@ Generate an Ethereum keypair for your Trust Anchor node:
 - You must also set `TRUST_ANCHOR_PREFNAME` (your organization name)
 - Restart ta-node container after generation:
   ```bash
-  docker-compose -f docker-compose.dev.yml restart ta-node
+  docker-compose -f docker-compose.yml restart ta-node
   ```
 
 **When to regenerate:**
@@ -535,7 +580,7 @@ By default, Nginx serves traffic over HTTP on port 80:
 
 ```bash
 # Start all services
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # Access your services
 # Laravel: http://localhost/
@@ -557,7 +602,7 @@ echo "VERISCOPE_SERVICE_HOST=node.example.com" >> .env
 ./docker-scripts/setup-docker.sh setup-nginx
 # This creates docker-scripts/nginx/nginx-ssl.conf with HTTPS configuration
 
-# 4. Update docker-compose.dev.yml nginx service volumes to use SSL config
+# 4. Update docker-compose.yml nginx service volumes to use SSL config
 # Change from:
 #   - ./docker-scripts/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 # To:
@@ -566,7 +611,7 @@ echo "VERISCOPE_SERVICE_HOST=node.example.com" >> .env
 #   - ${SSL_KEY_PATH}:/etc/nginx/ssl/key.pem:ro
 
 # 5. Restart nginx
-docker-compose -f docker-compose.dev.yml restart nginx
+docker-compose -f docker-compose.yml restart nginx
 
 # Access your services over HTTPS
 # Laravel: https://node.example.com/
@@ -590,7 +635,7 @@ docker-compose -f docker-compose.dev.yml restart nginx
 
 The script automatically detects development mode and warns you if SSL is not needed:
 
-- Using `docker-compose.dev.yml` → Development mode
+- Using `docker-compose.yml` → Development mode
 - `VERISCOPE_SERVICE_HOST` is `localhost`, `*.local`, or `*.test` → Development mode
 - `APP_ENV=local` or `APP_ENV=development` → Development mode
 
@@ -642,7 +687,7 @@ echo "VERISCOPE_SERVICE_HOST=node.example.com" >> .env
 # [INFO] Setting up SSL certificate...
 # [WARN] Development mode detected!
 # [INFO] Current settings:
-#   - Compose file: docker-compose.dev.yml
+#   - Compose file: docker-compose.yml
 #   - Host: localhost
 #   - APP_ENV: local
 #
@@ -722,13 +767,13 @@ server {
 **Managing Nginx:**
 ```bash
 # View Nginx logs
-docker-compose -f docker-compose.dev.yml logs -f nginx
+docker-compose -f docker-compose.yml logs -f nginx
 
 # Restart Nginx (after changing configuration)
-docker-compose -f docker-compose.dev.yml restart nginx
+docker-compose -f docker-compose.yml restart nginx
 
 # Check Nginx configuration syntax
-docker-compose -f docker-compose.dev.yml exec nginx nginx -t
+docker-compose -f docker-compose.yml exec nginx nginx -t
 ```
 
 #### Renewing SSL Certificates
@@ -770,10 +815,10 @@ docker-compose --profile production up -d certbot
 **Manual renewal check:**
 ```bash
 # Check certificate expiration (via Docker)
-docker-compose -f docker-compose.dev.yml run --rm certbot certificates
+docker-compose -f docker-compose.yml run --rm certbot certificates
 
 # Test renewal without actually renewing
-docker-compose -f docker-compose.dev.yml run --rm certbot renew --dry-run
+docker-compose -f docker-compose.yml run --rm certbot renew --dry-run
 ```
 
 #### Complete SSL/Nginx Workflow
@@ -795,14 +840,14 @@ dig node.example.com +short
 ./docker-scripts/setup-docker.sh setup-nginx
 # This creates docker-scripts/nginx/nginx-ssl.conf
 
-# 5. Update docker-compose.dev.yml nginx volumes to use SSL config:
+# 5. Update docker-compose.yml nginx volumes to use SSL config:
 # Change:    - ./docker-scripts/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 # To:        - ./docker-scripts/nginx/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro
 #            - ${SSL_CERT_PATH}:/etc/nginx/ssl/cert.pem:ro
 #            - ${SSL_KEY_PATH}:/etc/nginx/ssl/key.pem:ro
 
 # 6. Restart nginx
-docker-compose -f docker-compose.dev.yml restart nginx
+docker-compose -f docker-compose.yml restart nginx
 
 # 7. Verify HTTPS is working
 curl -I https://node.example.com
@@ -822,21 +867,21 @@ curl -I https://node.example.com
 # - Run Certbot manually: sudo certbot certonly --standalone -d node.example.com
 
 # Nginx won't start with SSL
-# - Check nginx config syntax: docker-compose -f docker-compose.dev.yml exec nginx nginx -t
-# - View nginx logs: docker-compose -f docker-compose.dev.yml logs nginx
+# - Check nginx config syntax: docker-compose -f docker-compose.yml exec nginx nginx -t
+# - View nginx logs: docker-compose -f docker-compose.yml logs nginx
 # - Verify certificate paths in .env: cat .env | grep SSL
-# - Ensure SSL certificates are mounted in docker-compose.dev.yml volumes
+# - Ensure SSL certificates are mounted in docker-compose.yml volumes
 
 # 502 Bad Gateway
-# - Check app is running: docker-compose -f docker-compose.dev.yml ps app
+# - Check app is running: docker-compose -f docker-compose.yml ps app
 # - Check app logs: ./docker-scripts/logs.sh app
-# - Verify network connectivity: docker-compose -f docker-compose.dev.yml exec nginx ping app
+# - Verify network connectivity: docker-compose -f docker-compose.yml exec nginx ping app
 
 # Certificate renewal failed
 # - Check if port 80 is free during renewal
-# - Manually stop nginx: docker-compose -f docker-compose.dev.yml stop nginx
+# - Manually stop nginx: docker-compose -f docker-compose.yml stop nginx
 # - Run renewal: sudo certbot renew
-# - Restart nginx: docker-compose -f docker-compose.dev.yml --profile production up -d nginx
+# - Restart nginx: docker-compose -f docker-compose.yml --profile production up -d nginx
 ```
 
 ### Daily Operations
@@ -882,7 +927,7 @@ curl -I https://node.example.com
 
 ```bash
 # Check container status
-docker-compose -f docker-compose.dev.yml ps
+docker-compose -f docker-compose.yml ps
 
 # View all logs
 ./docker-scripts/setup-docker.sh logs
@@ -903,7 +948,7 @@ docker-compose -f docker-compose.dev.yml ps
 
 All scripts respect these environment variables:
 
-- `COMPOSE_FILE` - Docker Compose file to use (default: `docker-compose.dev.yml`)
+- `COMPOSE_FILE` - Docker Compose file to use (default: `docker-compose.yml`)
 - `BACKUP_DIR` - Directory for backups (default: `./backups`)
 - `VERISCOPE_TARGET` - Target blockchain network (`veriscope_testnet`, `fed_testnet`, `fed_mainnet`)
 - `VERISCOPE_COMMON_NAME` - Organization name for ethstats display
@@ -987,7 +1032,7 @@ docker-scripts/
 For issues or questions:
 1. Check service logs: `./docker-scripts/logs.sh <service>`
 2. Run health check: `./docker-scripts/setup-docker.sh health`
-3. Review container status: `docker-compose -f docker-compose.dev.yml ps`
+3. Review container status: `docker-compose -f docker-compose.yml ps`
 4. Consult DOCKER.md for detailed Docker documentation
 
 ## License
