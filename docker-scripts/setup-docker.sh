@@ -46,6 +46,44 @@ echo_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Portable sed in-place editing (works on both macOS and Linux)
+# Usage: portable_sed 's/pattern/replacement/' filename
+# Returns: 0 on success, 1 on error
+portable_sed() {
+    local sed_expression="$1"
+    local file="$2"
+
+    if [ -z "$sed_expression" ] || [ -z "$file" ]; then
+        echo_error "portable_sed: Missing arguments"
+        return 1
+    fi
+
+    if [ ! -f "$file" ]; then
+        echo_error "portable_sed: File not found: $file"
+        return 1
+    fi
+
+    if [ ! -w "$file" ]; then
+        echo_error "portable_sed: File not writable: $file"
+        return 1
+    fi
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS requires empty string after -i
+        if ! sed -i "" "$sed_expression" "$file"; then
+            echo_error "portable_sed: sed command failed on $file"
+            return 1
+        fi
+    else
+        # Linux doesn't use empty string
+        if ! sed -i "$sed_expression" "$file"; then
+            echo_error "portable_sed: sed command failed on $file"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 # Detect if running in development mode
 is_dev_mode() {
     # Check if using dev compose file
@@ -64,6 +102,314 @@ is_dev_mode() {
     fi
 
     return 1
+}
+
+# List of known weak/common passwords to reject
+is_weak_password() {
+    local password="$1"
+
+    # List of known weak passwords
+    local weak_passwords=(
+        "trustanchor_dev"
+        "password"
+        "Password123"
+        "admin"
+        "trustanchor"
+        "postgres"
+        "root"
+        "123456"
+        "password123"
+        "admin123"
+    )
+
+    # Check against known weak passwords
+    for weak in "${weak_passwords[@]}"; do
+        if [ "$password" = "$weak" ]; then
+            return 0  # Is weak
+        fi
+    done
+
+    return 1  # Not weak
+}
+
+# Validate password strength
+# Usage: validate_password_strength "password" [min_length]
+# Returns: 0 if strong enough, 1 if weak
+validate_password_strength() {
+    local password="$1"
+    local min_length=${2:-16}
+
+    # Check if password is empty
+    if [ -z "$password" ]; then
+        echo_error "Password cannot be empty"
+        return 1
+    fi
+
+    # Check against known weak passwords
+    if is_weak_password "$password"; then
+        echo_error "Password is a commonly used weak password"
+        return 1
+    fi
+
+    # Check minimum length
+    if [ ${#password} -lt $min_length ]; then
+        echo_error "Password must be at least $min_length characters (got ${#password})"
+        return 1
+    fi
+
+    # Check for at least one number (optional but recommended)
+    if ! [[ "$password" =~ [0-9] ]]; then
+        echo_warn "Password should contain at least one number"
+    fi
+
+    # Check for at least one letter (optional but recommended)
+    if ! [[ "$password" =~ [a-zA-Z] ]]; then
+        echo_warn "Password should contain at least one letter"
+    fi
+
+    return 0
+}
+
+# Validate PostgreSQL password with environment-aware rules
+# Usage: validate_postgres_password "password"
+# Returns: 0 if valid, 1 if invalid
+validate_postgres_password() {
+    local password="$1"
+
+    # In production, enforce strict password requirements
+    if ! is_dev_mode; then
+        echo_info "Production mode detected - enforcing strict password requirements"
+
+        # Check for weak passwords
+        if is_weak_password "$password"; then
+            echo_error "SECURITY: Weak password detected in production mode"
+            echo_error "Password '$password' is not allowed in production"
+            echo_info "Use: ./docker-scripts/setup-docker.sh to generate a secure password"
+            return 1
+        fi
+
+        # Enforce minimum 20 characters in production
+        if ! validate_password_strength "$password" 20; then
+            echo_error "SECURITY: Password does not meet production requirements"
+            echo_info "Production passwords must be:"
+            echo "  - At least 20 characters long"
+            echo "  - Not a common/weak password"
+            echo "  - Contain numbers and letters"
+            return 1
+        fi
+    else
+        # In development, just warn about weak passwords
+        if is_weak_password "$password"; then
+            echo_warn "Development mode: Using weak password '$password'"
+            echo_warn "This would be rejected in production mode"
+        elif ! validate_password_strength "$password" 12; then
+            echo_warn "Development mode: Password is weak but allowed"
+            echo_warn "This would be rejected in production mode"
+        fi
+    fi
+
+    return 0
+}
+
+# Check if a container is running
+# Usage: is_container_running "container_name"
+# Returns: 0 if running, 1 if not
+is_container_running() {
+    local container_name="$1"
+
+    if [ -z "$container_name" ]; then
+        return 1
+    fi
+
+    if docker-compose -f "$COMPOSE_FILE" ps "$container_name" 2>/dev/null | grep -q "Up"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Wait for PostgreSQL to be ready to accept connections
+# Usage: wait_for_postgres_ready [timeout_seconds]
+# Returns: 0 if ready, 1 if timeout
+wait_for_postgres_ready() {
+    local timeout=${1:-60}
+    local elapsed=0
+
+    echo_info "Waiting for PostgreSQL to be ready..."
+
+    while [ $elapsed -lt $timeout ]; do
+        if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
+            echo_info "PostgreSQL is ready"
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    echo_error "Timeout waiting for PostgreSQL to be ready"
+    return 1
+}
+
+# Wait for Redis to be ready to accept connections
+# Usage: wait_for_redis_ready [timeout_seconds]
+# Returns: 0 if ready, 1 if timeout
+wait_for_redis_ready() {
+    local timeout=${1:-60}
+    local elapsed=0
+
+    echo_info "Waiting for Redis to be ready..."
+
+    while [ $elapsed -lt $timeout ]; do
+        if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+            echo_info "Redis is ready"
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    echo_error "Timeout waiting for Redis to be ready"
+    return 1
+}
+
+# Wait for Laravel app to be ready
+# Usage: wait_for_app_ready [timeout_seconds]
+# Returns: 0 if ready, 1 if timeout
+wait_for_app_ready() {
+    local timeout=${1:-60}
+    local elapsed=0
+
+    echo_info "Waiting for Laravel app to be ready..."
+
+    while [ $elapsed -lt $timeout ]; do
+        if is_container_running "app"; then
+            # Check if artisan is accessible
+            if docker-compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
+                echo_info "Laravel app is ready"
+                return 0
+            fi
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    echo_error "Timeout waiting for Laravel app to be ready"
+    return 1
+}
+
+# Wait for TA Node to be ready
+# Usage: wait_for_ta_node_ready [timeout_seconds]
+# Returns: 0 if ready, 1 if timeout
+wait_for_ta_node_ready() {
+    local timeout=${1:-60}
+    local elapsed=0
+
+    echo_info "Waiting for TA Node to be ready..."
+
+    while [ $elapsed -lt $timeout ]; do
+        if is_container_running "ta-node"; then
+            # Check if node process is running
+            if docker-compose -f "$COMPOSE_FILE" exec -T ta-node sh -c "pgrep -f node" >/dev/null 2>&1; then
+                echo_info "TA Node is ready"
+                return 0
+            fi
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    echo_error "Timeout waiting for TA Node to be ready"
+    return 1
+}
+
+# Wait for multiple services to be ready
+# Usage: wait_for_services_ready [timeout_seconds]
+# Returns: 0 if all ready, 1 if any timeout
+wait_for_services_ready() {
+    local timeout=${1:-120}
+    local all_ready=true
+
+    echo_info "Waiting for all services to be ready (timeout: ${timeout}s)..."
+
+    # Wait for each service with individual timeouts
+    if ! wait_for_postgres_ready $timeout; then
+        all_ready=false
+    fi
+
+    if ! wait_for_redis_ready $timeout; then
+        all_ready=false
+    fi
+
+    if ! wait_for_app_ready $timeout; then
+        all_ready=false
+    fi
+
+    if ! wait_for_ta_node_ready $timeout; then
+        all_ready=false
+    fi
+
+    if [ "$all_ready" = false ]; then
+        echo_error "Some services failed to become ready"
+        return 1
+    fi
+
+    echo_info "All services are ready"
+    return 0
+}
+
+# Validate if a domain is suitable for Let's Encrypt SSL certificates
+# Usage: is_valid_ssl_domain "domain.com"
+# Returns: 0 if valid, 1 if invalid
+is_valid_ssl_domain() {
+    local domain="$1"
+
+    # Empty domain
+    if [ -z "$domain" ]; then
+        return 1
+    fi
+
+    # Check for localhost and loopback addresses
+    if [[ "$domain" =~ ^(localhost|127\.[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+        return 1
+    fi
+
+    # Check for .local domains (mDNS)
+    if [[ "$domain" =~ \.local$ ]]; then
+        return 1
+    fi
+
+    # Check for .test domains (reserved for testing)
+    if [[ "$domain" =~ \.test$ ]]; then
+        return 1
+    fi
+
+    # Check for .example domains (documentation)
+    if [[ "$domain" =~ \.example$ ]]; then
+        return 1
+    fi
+
+    # Check for .invalid domains (RFC 2606)
+    if [[ "$domain" =~ \.invalid$ ]]; then
+        return 1
+    fi
+
+    # Check for .localhost domains
+    if [[ "$domain" =~ \.localhost$ ]]; then
+        return 1
+    fi
+
+    # Check for IP addresses (Let's Encrypt doesn't support IP addresses)
+    if [[ "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        return 1
+    fi
+
+    # Check for basic domain format (must have at least one dot)
+    if [[ ! "$domain" =~ \. ]]; then
+        return 1
+    fi
+
+    # Domain appears valid for Let's Encrypt
+    return 0
 }
 
 # Validate environment variables
@@ -125,6 +471,252 @@ check_docker() {
     echo_info "Docker is installed: $(docker --version)"
 }
 
+# Pre-flight checks for system readiness
+preflight_checks() {
+    echo_info "Running pre-flight system checks..."
+    echo ""
+
+    local all_checks_passed=true
+
+    # 1. Check Docker daemon
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "1. Docker Daemon Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if docker info >/dev/null 2>&1; then
+        echo_info "✓ Docker daemon is running"
+    else
+        echo_error "✗ Docker daemon is not running"
+        echo_info "  Start Docker: sudo systemctl start docker (Linux) or Docker Desktop (macOS)"
+        all_checks_passed=false
+    fi
+    echo ""
+
+    # 2. Check required ports
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "2. Port Availability"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    local ports=(80 443 5432 6379 8545)
+    local port_names=("HTTP" "HTTPS" "PostgreSQL" "Redis" "Nethermind RPC")
+    local port_failed=false
+
+    for i in "${!ports[@]}"; do
+        local port="${ports[$i]}"
+        local name="${port_names[$i]}"
+
+        if check_port_available "$port"; then
+            echo_info "✓ Port $port ($name) is available"
+        else
+            echo_error "✗ Port $port ($name) is already in use"
+            echo_info "  Process using port: $(get_port_process $port)"
+            port_failed=true
+            all_checks_passed=false
+        fi
+    done
+
+    if [ "$port_failed" = false ]; then
+        echo_info "All required ports are available"
+    fi
+    echo ""
+
+    # 3. Check disk space
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "3. Disk Space"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    local available_space_gb=$(get_available_disk_space_gb "$PROJECT_ROOT")
+    local min_required_gb=20
+    local recommended_gb=50
+
+    echo_info "Available space: ${available_space_gb}GB"
+
+    if [ "$available_space_gb" -lt "$min_required_gb" ]; then
+        echo_error "✗ Insufficient disk space (minimum: ${min_required_gb}GB)"
+        all_checks_passed=false
+    elif [ "$available_space_gb" -lt "$recommended_gb" ]; then
+        echo_warn "⚠ Disk space is below recommended (recommended: ${recommended_gb}GB)"
+    else
+        echo_info "✓ Sufficient disk space available"
+    fi
+    echo ""
+
+    # 4. Check network connectivity
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "4. Network Connectivity"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Check internet connectivity
+    if check_internet_connectivity; then
+        echo_info "✓ Internet connectivity is available"
+    else
+        echo_warn "⚠ No internet connectivity detected"
+        echo_info "  Some features may not work (SSL certs, Docker pulls, etc.)"
+    fi
+
+    # Check DNS resolution
+    if check_dns_resolution "github.com"; then
+        echo_info "✓ DNS resolution is working"
+    else
+        echo_error "✗ DNS resolution failed"
+        all_checks_passed=false
+    fi
+
+    # Check Docker Hub connectivity
+    if check_docker_hub_connectivity; then
+        echo_info "✓ Docker Hub is reachable"
+    else
+        echo_warn "⚠ Docker Hub is not reachable"
+        echo_info "  Docker image pulls may fail"
+    fi
+    echo ""
+
+    # 5. Check Docker resources
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "5. Docker Resources"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    local docker_disk_usage=$(docker system df --format "{{.Type}}\t{{.Size}}" 2>/dev/null | grep "Total" | awk '{print $2}' || echo "Unknown")
+    echo_info "Current Docker disk usage: $docker_disk_usage"
+
+    # Check if Docker has enough memory (if available)
+    local docker_memory=$(docker info --format '{{.MemTotal}}' 2>/dev/null)
+    if [ ! -z "$docker_memory" ] && [ "$docker_memory" != "0" ]; then
+        local memory_gb=$((docker_memory / 1024 / 1024 / 1024))
+        echo_info "Docker memory limit: ${memory_gb}GB"
+        if [ "$memory_gb" -lt 4 ]; then
+            echo_warn "⚠ Docker memory is low (recommended: 4GB+)"
+        else
+            echo_info "✓ Docker memory is adequate"
+        fi
+    fi
+    echo ""
+
+    # 6. Check for conflicting containers
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "6. Existing Containers"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    local running_containers=$(docker ps --filter "name=veriscope-" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
+    local all_containers=$(docker ps -a --filter "name=veriscope-" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
+
+    if [ "$running_containers" -gt 0 ]; then
+        echo_warn "⚠ Found $running_containers running Veriscope container(s)"
+        docker ps --filter "name=veriscope-" --format "  - {{.Names}} ({{.Status}})"
+    else
+        echo_info "✓ No running Veriscope containers"
+    fi
+
+    if [ "$all_containers" -gt 0 ] && [ "$running_containers" -eq 0 ]; then
+        echo_info "  Found $all_containers stopped container(s) - will be removed on fresh install"
+    fi
+    echo ""
+
+    # Summary
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Pre-flight Check Summary"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [ "$all_checks_passed" = true ]; then
+        echo_info "✅ All critical checks passed - system is ready!"
+        echo ""
+        return 0
+    else
+        echo_error "❌ Some critical checks failed"
+        echo_warn "Please resolve the issues above before continuing"
+        echo ""
+        read -p "Do you want to continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo_info "Installation cancelled"
+            return 1
+        fi
+        return 0
+    fi
+}
+
+# Check if a port is available
+check_port_available() {
+    local port=$1
+
+    # Use lsof if available (macOS/Linux)
+    if command -v lsof &> /dev/null; then
+        ! lsof -iTCP:$port -sTCP:LISTEN -t >/dev/null 2>&1
+    # Fallback to netstat (Linux)
+    elif command -v netstat &> /dev/null; then
+        ! netstat -tuln 2>/dev/null | grep -q ":$port "
+    # Fallback to ss (modern Linux)
+    elif command -v ss &> /dev/null; then
+        ! ss -tuln 2>/dev/null | grep -q ":$port "
+    else
+        # Can't check, assume available
+        return 0
+    fi
+}
+
+# Get process using a port
+get_port_process() {
+    local port=$1
+
+    if command -v lsof &> /dev/null; then
+        lsof -iTCP:$port -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 | awk '{print $1 " (PID: " $2 ")"}'
+    elif command -v netstat &> /dev/null; then
+        netstat -tulnp 2>/dev/null | grep ":$port " | awk '{print $7}'
+    else
+        echo "Unknown"
+    fi
+}
+
+# Get available disk space in GB
+get_available_disk_space_gb() {
+    local path=$1
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        df -Pk "$path" | tail -1 | awk '{print int($4/1024/1024)}'
+    else
+        # Linux
+        df -BG "$path" | tail -1 | awk '{print int($4)}'
+    fi
+}
+
+# Check internet connectivity
+check_internet_connectivity() {
+    # Use timeout if available, otherwise use ping timeout flag
+    if command -v timeout &> /dev/null; then
+        timeout 3 ping -c 1 8.8.8.8 >/dev/null 2>&1 || \
+        timeout 3 ping -c 1 1.1.1.1 >/dev/null 2>&1
+    else
+        # macOS and systems without timeout command
+        ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1 || \
+        ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1
+    fi
+}
+
+# Check DNS resolution
+check_dns_resolution() {
+    local host=$1
+
+    # Try nslookup first
+    if command -v nslookup &> /dev/null; then
+        nslookup "$host" >/dev/null 2>&1
+    # Fallback to host
+    elif command -v host &> /dev/null; then
+        host "$host" >/dev/null 2>&1
+    # Fallback to dig
+    elif command -v dig &> /dev/null; then
+        dig +short "$host" >/dev/null 2>&1
+    else
+        # Can't check, assume OK
+        return 0
+    fi
+}
+
+# Check Docker Hub connectivity
+check_docker_hub_connectivity() {
+    if command -v timeout &> /dev/null; then
+        timeout 5 curl -s -o /dev/null -w "%{http_code}" https://hub.docker.com/ 2>/dev/null | grep -q "200"
+    else
+        # macOS and systems without timeout - use curl's max-time
+        curl --max-time 5 -s -o /dev/null -w "%{http_code}" https://hub.docker.com/ 2>/dev/null | grep -q "200"
+    fi
+}
+
 # Generate random string for secrets
 generate_secret() {
     if command -v pwgen &> /dev/null; then
@@ -147,30 +739,57 @@ generate_postgres_credentials() {
 
     # Check if postgres password is already set in root .env
     if [ -f "$env_file" ] && grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
-        local existing_pass=$(grep "^POSTGRES_PASSWORD=" "$env_file" | cut -d'=' -f2)
-        if [ ! -z "$existing_pass" ] && [ "$existing_pass" != "trustanchor_dev" ]; then
-            echo_info "PostgreSQL credentials already exist in root .env"
-            # Use existing credentials instead of generating new ones
-            pgpass="$existing_pass"
-            pguser=$(grep "^POSTGRES_USER=" "$env_file" | cut -d'=' -f2 || echo "trustanchor")
-            pgdb=$(grep "^POSTGRES_DB=" "$env_file" | cut -d'=' -f2 || echo "trustanchor")
-            # Continue to update Laravel .env (don't return early!)
+        local existing_pass=$(grep "^POSTGRES_PASSWORD=" "$env_file" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+
+        if [ ! -z "$existing_pass" ]; then
+            # Validate existing password
+            if validate_postgres_password "$existing_pass"; then
+                echo_info "PostgreSQL credentials already exist in root .env"
+                # Use existing credentials
+                pgpass="$existing_pass"
+                pguser=$(grep "^POSTGRES_USER=" "$env_file" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "trustanchor")
+                pgdb=$(grep "^POSTGRES_DB=" "$env_file" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "trustanchor")
+                # Continue to update Laravel .env (don't return early!)
+            else
+                # Existing password is weak or invalid - regenerate
+                echo_warn "Existing PostgreSQL password is weak or invalid"
+                echo_info "Generating new secure PostgreSQL credentials..."
+                pgpass=$(generate_secret)
+
+                # Validate generated password
+                if ! validate_postgres_password "$pgpass"; then
+                    echo_error "Failed to generate valid password - this should not happen"
+                    return 1
+                fi
+            fi
         else
-            # Generate new credentials
+            # Empty password - generate new
             echo_info "Generating new PostgreSQL credentials..."
             pgpass=$(generate_secret)
+
+            # Validate generated password
+            if ! validate_postgres_password "$pgpass"; then
+                echo_error "Failed to generate valid password - this should not happen"
+                return 1
+            fi
         fi
     else
         # Generate new credentials
         echo_info "Generating PostgreSQL credentials..."
         pgpass=$(generate_secret)
+
+        # Validate generated password
+        if ! validate_postgres_password "$pgpass"; then
+            echo_error "Failed to generate valid password - this should not happen"
+            return 1
+        fi
     fi
 
     # Update root .env file
     if [ -f "$env_file" ]; then
         # Update or add POSTGRES_PASSWORD
         if grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
-            sed -i "" "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$pgpass/" "$env_file"
+            portable_sed "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$pgpass/" "$env_file"
         else
             # Add PostgreSQL section with proper formatting
             cat >> "$env_file" <<EOF
@@ -186,11 +805,11 @@ EOF
         # Ensure POSTGRES_USER and POSTGRES_DB are set if POSTGRES_PASSWORD already existed
         if grep -q "^POSTGRES_PASSWORD=" "$env_file"; then
             if ! grep -q "^POSTGRES_USER=" "$env_file"; then
-                sed -i "" "/^POSTGRES_PASSWORD=/a\\
+                portable_sed "/^POSTGRES_PASSWORD=/a\\
 POSTGRES_USER=$pguser" "$env_file"
             fi
             if ! grep -q "^POSTGRES_DB=" "$env_file"; then
-                sed -i "" "/^POSTGRES_USER=/a\\
+                portable_sed "/^POSTGRES_USER=/a\\
 POSTGRES_DB=$pgdb" "$env_file"
             fi
         fi
@@ -202,24 +821,24 @@ POSTGRES_DB=$pgdb" "$env_file"
         echo_info "Updating Laravel configuration for Docker..."
 
         # First update on host filesystem
-        sed -i "" "s#^DB_CONNECTION=.*#DB_CONNECTION=pgsql#" "$laravel_env"
-        sed -i "" "s#^DB_HOST=.*#DB_HOST=postgres#" "$laravel_env"
-        sed -i "" "s#^DB_PORT=.*#DB_PORT=5432#" "$laravel_env"
-        sed -i "" "s#^DB_DATABASE=.*#DB_DATABASE=$pgdb#" "$laravel_env"
-        sed -i "" "s#^DB_USERNAME=.*#DB_USERNAME=$pguser#" "$laravel_env"
-        sed -i "" "s#^DB_PASSWORD=.*#DB_PASSWORD=$pgpass#" "$laravel_env"
+        portable_sed "s#^DB_CONNECTION=.*#DB_CONNECTION=pgsql#" "$laravel_env"
+        portable_sed "s#^DB_HOST=.*#DB_HOST=postgres#" "$laravel_env"
+        portable_sed "s#^DB_PORT=.*#DB_PORT=5432#" "$laravel_env"
+        portable_sed "s#^DB_DATABASE=.*#DB_DATABASE=$pgdb#" "$laravel_env"
+        portable_sed "s#^DB_USERNAME=.*#DB_USERNAME=$pguser#" "$laravel_env"
+        portable_sed "s#^DB_PASSWORD=.*#DB_PASSWORD=$pgpass#" "$laravel_env"
 
         # Redis configuration (Docker service names)
-        sed -i "" 's|^REDIS_HOST=127\.0\.0\.1|REDIS_HOST=redis|g' "$laravel_env"
-        sed -i "" 's|^REDIS_HOST=localhost|REDIS_HOST=redis|g' "$laravel_env"
+        portable_sed 's|^REDIS_HOST=127\.0\.0\.1|REDIS_HOST=redis|g' "$laravel_env"
+        portable_sed 's|^REDIS_HOST=localhost|REDIS_HOST=redis|g' "$laravel_env"
 
         # Pusher/WebSocket configuration (Docker service names)
-        sed -i "" 's|^PUSHER_APP_HOST=127\.0\.0\.1|PUSHER_APP_HOST=app|g' "$laravel_env"
-        sed -i "" 's|^PUSHER_APP_HOST=localhost|PUSHER_APP_HOST=app|g' "$laravel_env"
+        portable_sed 's|^PUSHER_APP_HOST=127\.0\.0\.1|PUSHER_APP_HOST=app|g' "$laravel_env"
+        portable_sed 's|^PUSHER_APP_HOST=localhost|PUSHER_APP_HOST=app|g' "$laravel_env"
 
         # TA Node API URLs (Docker service names)
-        sed -i "" 's|^HTTP_API_URL=http://localhost:8080|HTTP_API_URL=http://ta-node:8080|g' "$laravel_env"
-        sed -i "" 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
+        portable_sed 's|^HTTP_API_URL=http://localhost:8080|HTTP_API_URL=http://ta-node:8080|g' "$laravel_env"
+        portable_sed 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
 
         # Set APP_URL from VERISCOPE_SERVICE_HOST
         local service_host="${VERISCOPE_SERVICE_HOST:-localhost}"
@@ -227,7 +846,7 @@ POSTGRES_DB=$pgdb" "$env_file"
         if [ "$service_host" = "localhost" ] || [ "$service_host" = "127.0.0.1" ]; then
             app_url="http://$service_host"
         fi
-        sed -i "" "s|^APP_URL=.*|APP_URL=$app_url|g" "$laravel_env"
+        portable_sed "s|^APP_URL=.*|APP_URL=$app_url|g" "$laravel_env"
         echo_info "Set APP_URL=$app_url"
 
         echo_info "Laravel .env configured (changes are immediately visible in container via bind mount)"
@@ -279,21 +898,30 @@ check_env() {
 # Build Docker images
 build_images() {
     echo_info "Building Docker images..."
-    docker-compose -f "$COMPOSE_FILE" build
+    if ! docker-compose -f "$COMPOSE_FILE" build; then
+        echo_error "Failed to build Docker images"
+        return 1
+    fi
     echo_info "Docker images built successfully"
 }
 
 # Start all services
 start_services() {
     echo_info "Starting Veriscope services..."
-    docker-compose -f "$COMPOSE_FILE" up -d
+    if ! docker-compose -f "$COMPOSE_FILE" up -d; then
+        echo_error "Failed to start services"
+        return 1
+    fi
     echo_info "Services started. Use 'docker-compose -f $COMPOSE_FILE ps' to check status"
 }
 
 # Stop all services
 stop_services() {
     echo_info "Stopping Veriscope services..."
-    docker-compose -f "$COMPOSE_FILE" down
+    if ! docker-compose -f "$COMPOSE_FILE" down; then
+        echo_error "Failed to stop services"
+        return 1
+    fi
     echo_info "Services stopped"
 }
 
@@ -307,16 +935,45 @@ reset_volumes() {
     echo_info "Nethermind blockchain data will be preserved"
 
     # Stop services first
-    docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+    echo_info "Stopping services..."
+    if ! docker-compose -f "$COMPOSE_FILE" down; then
+        echo_warn "Failed to stop services cleanly, continuing..."
+    fi
 
     # Get the project name from docker-compose config
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+
+    if [ -z "$project_name" ]; then
+        echo_error "Failed to determine project name"
+        return 1
+    fi
 
     # Remove only postgres and redis volumes (keep Nethermind)
-    docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
-    docker volume rm "${project_name}_redis_data" 2>/dev/null || true
+    local removed=0
+    local failed=0
 
-    echo_info "Database and Redis volumes reset."
+    for volume in postgres_data redis_data app_data artifacts; do
+        local volume_name="${project_name}_${volume}"
+        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            if docker volume rm "$volume_name" 2>/dev/null; then
+                echo_info "✓ Removed volume: $volume_name"
+                removed=$((removed + 1))
+            else
+                echo_warn "✗ Failed to remove volume: $volume_name (may be in use)"
+                failed=$((failed + 1))
+            fi
+        else
+            echo_info "  Volume does not exist: $volume_name"
+        fi
+    done
+
+    if [ $failed -gt 0 ]; then
+        echo_error "$failed volume(s) could not be removed"
+        echo_info "Make sure all containers are stopped: docker-compose -f $COMPOSE_FILE down"
+        return 1
+    fi
+
+    echo_info "Successfully removed $removed volume(s)"
     echo_warn "You will need to run migrations and seed the database again"
 }
 
@@ -372,15 +1029,19 @@ destroy_services() {
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
             docker volume rm "${project_name}_redis_data" 2>/dev/null || true
             docker volume rm "${project_name}_nethermind_data" 2>/dev/null || true
-            docker volume rm "${project_name}_certbot_certs" 2>/dev/null || true
+            docker volume rm "${project_name}_certbot_conf" 2>/dev/null || true
             docker volume rm "${project_name}_certbot_www" 2>/dev/null || true
+            docker volume rm "${project_name}_app_data" 2>/dev/null || true
+            docker volume rm "${project_name}_artifacts" 2>/dev/null || true
             echo_info "All volumes removed"
             ;;
         2)
             echo_warn "Removing PostgreSQL and Redis volumes (preserving Nethermind)..."
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
             docker volume rm "${project_name}_redis_data" 2>/dev/null || true
-            echo_info "Database and Redis volumes removed (Nethermind preserved)"
+            docker volume rm "${project_name}_app_data" 2>/dev/null || true
+            docker volume rm "${project_name}_artifacts" 2>/dev/null || true
+            echo_info "Database, Redis, app, and artifacts volumes removed (Nethermind preserved)"
             ;;
         3)
             echo_info "Keeping all volumes intact"
@@ -427,8 +1088,10 @@ destroy_services() {
 # Restart all services
 restart_services() {
     echo_info "Restarting Veriscope services..."
-    docker-compose -f "$COMPOSE_FILE" restart
-
+    if ! docker-compose -f "$COMPOSE_FILE" restart; then
+        echo_error "Failed to restart services"
+        return 1
+    fi
     echo_info "Services restarted"
 }
 
@@ -501,7 +1164,10 @@ show_supervisord_logs() {
 # Initialize database
 init_database() {
     echo_info "Initializing Laravel database..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
+        echo_error "Failed to initialize database"
+        return 1
+    fi
     echo_info "Database initialized"
 }
 
@@ -539,85 +1205,490 @@ create_admin() {
 # Run Laravel migrations
 run_migrations() {
     echo_info "Running Laravel migrations..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
+        echo_error "Failed to run migrations"
+        return 1
+    fi
     echo_info "Migrations completed"
 }
 
 # Clear Laravel cache
 clear_cache() {
     echo_info "Clearing Laravel cache..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan cache:clear
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan config:clear
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan route:clear
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan view:clear
+
+    if ! is_container_running "app"; then
+        echo_error "Laravel app container is not running"
+        return 1
+    fi
+
+    local failed=false
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan cache:clear; then
+        echo_warn "Failed to clear application cache"
+        failed=true
+    fi
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan config:clear; then
+        echo_warn "Failed to clear config cache"
+        failed=true
+    fi
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan route:clear; then
+        echo_warn "Failed to clear route cache"
+        failed=true
+    fi
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan view:clear; then
+        echo_warn "Failed to clear view cache"
+        failed=true
+    fi
+
+    if [ "$failed" = true ]; then
+        echo_error "Some cache clear operations failed"
+        return 1
+    fi
+
     echo_info "Cache cleared"
 }
 
 # Install Node.js dependencies
 install_node_deps() {
     echo_info "Installing Node.js dependencies..."
-    docker-compose -f "$COMPOSE_FILE" exec ta-node sh -c "cd /app && npm install --legacy-peer-deps"
+
+    if ! is_container_running "ta-node"; then
+        echo_error "TA Node container is not running"
+        return 1
+    fi
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec ta-node sh -c "cd /app && npm install --legacy-peer-deps"; then
+        echo_error "Failed to install Node.js dependencies"
+        return 1
+    fi
+
     echo_info "Node.js dependencies installed"
 }
 
 # Install Laravel dependencies
 install_laravel_deps() {
     echo_info "Installing Laravel dependencies..."
-    docker-compose -f "$COMPOSE_FILE" exec app composer install
+
+    if ! is_container_running "app"; then
+        echo_error "Laravel app container is not running"
+        return 1
+    fi
+
+    if ! docker-compose -f "$COMPOSE_FILE" exec app composer install; then
+        echo_error "Failed to install Laravel dependencies"
+        return 1
+    fi
+
     echo_info "Laravel dependencies installed"
 }
 
 # Health check
 health_check() {
-    echo_info "Running health check..."
-
+    echo_info "Running comprehensive health check..."
     echo ""
-    echo "PostgreSQL:"
-    docker-compose -f "$COMPOSE_FILE" exec postgres pg_isready -U trustanchor || echo_error "PostgreSQL is not healthy"
 
-    echo ""
-    echo "Redis:"
-    docker-compose -f "$COMPOSE_FILE" exec redis redis-cli ping || echo_error "Redis is not healthy"
+    local all_healthy=true
 
-    echo ""
-    echo "Laravel App:"
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan --version || echo_error "Laravel app is not healthy"
+    # 1. Container Status
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "1. Container Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    echo ""
-    echo "Node.js Service:"
-    docker-compose -f "$COMPOSE_FILE" exec ta-node node --version || echo_error "Node.js service is not healthy"
+    local containers=("postgres" "redis" "app" "ta-node" "nginx" "nethermind")
+    local container_names=("PostgreSQL" "Redis" "Laravel App" "TA Node" "Nginx" "Nethermind")
 
+    for i in "${!containers[@]}"; do
+        local container="${containers[$i]}"
+        local name="${container_names[$i]}"
+
+        if docker-compose -f "$COMPOSE_FILE" ps "$container" 2>/dev/null | grep -q "Up"; then
+            echo_info "✓ $name is running"
+        else
+            echo_error "✗ $name is not running"
+            all_healthy=false
+        fi
+    done
     echo ""
-    echo "Arena (Bull Queue UI):"
-    curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:8080/arena/ || echo_error "Arena is not accessible"
+
+    # 2. Service Health
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "2. Service Health"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # PostgreSQL
+    if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
+        echo_info "✓ PostgreSQL is accepting connections"
+    else
+        echo_error "✗ PostgreSQL is not ready"
+        all_healthy=false
+    fi
+
+    # Redis
+    if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+        echo_info "✓ Redis is responding"
+    else
+        echo_error "✗ Redis is not responding"
+        all_healthy=false
+    fi
+
+    # Laravel
+    if docker-compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
+        echo_info "✓ Laravel app is functional"
+    else
+        echo_error "✗ Laravel app is not functional"
+        all_healthy=false
+    fi
+
+    # TA Node
+    if docker-compose -f "$COMPOSE_FILE" exec -T ta-node node --version >/dev/null 2>&1; then
+        echo_info "✓ TA Node is functional"
+    else
+        echo_error "✗ TA Node is not functional"
+        all_healthy=false
+    fi
+
+    # Nginx
+    local nginx_status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost 2>/dev/null || echo "000")
+    if [ "$nginx_status" = "200" ] || [ "$nginx_status" = "302" ] || [ "$nginx_status" = "401" ]; then
+        echo_info "✓ Nginx is serving (HTTP $nginx_status)"
+    else
+        echo_error "✗ Nginx is not responding (HTTP $nginx_status)"
+        all_healthy=false
+    fi
+    echo ""
+
+    # 3. Blockchain Sync Status
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "3. Blockchain Sync Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    check_blockchain_sync
+    echo ""
+
+    # 4. SSL Certificate Status
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "4. SSL Certificate Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    check_certificate_expiry
+    echo ""
+
+    # 5. Disk Space
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "5. Disk Space"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local available_space=$(get_available_disk_space_gb "$PROJECT_ROOT")
+    echo_info "Available disk space: ${available_space}GB"
+
+    if [ "$available_space" -lt 10 ]; then
+        echo_error "✗ Critical: Less than 10GB available"
+        all_healthy=false
+    elif [ "$available_space" -lt 20 ]; then
+        echo_warn "⚠ Warning: Less than 20GB available"
+    else
+        echo_info "✓ Disk space is adequate"
+    fi
+    echo ""
+
+    # 6. Docker Resources
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "6. Docker Resources"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Docker disk usage
+    local docker_usage=$(docker system df --format "{{.Type}}\t{{.Size}}" 2>/dev/null | grep "Total" | awk '{print $2}' || echo "Unknown")
+    echo_info "Docker disk usage: $docker_usage"
+
+    # Volume sizes
+    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    echo_info "Volume sizes:"
+    docker volume ls --filter "name=${project_name}_" --format "  {{.Name}}" 2>/dev/null | while read vol; do
+        if [ ! -z "$vol" ]; then
+            local size=$(docker system df -v 2>/dev/null | grep "$vol" | awk '{print $3}' || echo "?")
+            echo "    - $vol: $size"
+        fi
+    done
+    echo ""
+
+    # Summary
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Health Check Summary"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [ "$all_healthy" = true ]; then
+        echo_info "✅ All critical systems are healthy"
+        return 0
+    else
+        echo_error "❌ Some systems are unhealthy"
+        echo_warn "Review the issues above and take corrective action"
+        return 1
+    fi
 }
 
-# Backup database
-backup_database() {
-    local backup_file="backup-$(date +%Y%m%d-%H%M%S).sql"
-    echo_info "Backing up database to $backup_file..."
-    docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U trustanchor trustanchor > "$backup_file"
-    echo_info "Database backed up to $backup_file"
+# Check blockchain synchronization status
+check_blockchain_sync() {
+    if ! docker-compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
+        echo_warn "⚠ Nethermind is not running"
+        return
+    fi
+
+    # Get project name and network for Docker networking
+    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local network_name="${project_name}_veriscope"
+
+    # Query Nethermind RPC - use temporary Alpine container with curl
+    # This works even if Nethermind container doesn't have curl installed
+    rpc_query() {
+        local method=$1
+        docker run --rm --network "$network_name" alpine sh -c \
+            "apk add -q curl >/dev/null 2>&1 && curl -m 5 -s -X POST -H 'Content-Type: application/json' \
+            -d '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' \
+            http://nethermind:8545" 2>/dev/null
+    }
+
+    # Get sync status
+    local sync_response=$(rpc_query "eth_syncing")
+    local sync_status=$(echo "$sync_response" | grep -o '"result":[^,}]*' | cut -d: -f2)
+
+    # Get peer count
+    local peer_response=$(rpc_query "net_peerCount")
+    local peer_count=$(echo "$peer_response" | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+
+    # Convert hex peer count to decimal
+    if [ ! -z "$peer_count" ] && [ "$peer_count" != "null" ]; then
+        peer_count=$((16#${peer_count#0x}))
+    else
+        peer_count="?"
+    fi
+
+    # Get current block number
+    local block_response=$(rpc_query "eth_blockNumber")
+    local current_block=$(echo "$block_response" | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+
+    if [ ! -z "$current_block" ] && [ "$current_block" != "null" ]; then
+        current_block=$((16#${current_block#0x}))
+    else
+        current_block="?"
+    fi
+
+    echo_info "Current block: $current_block"
+    echo_info "Connected peers: $peer_count"
+
+    # Check if we got valid responses
+    if [ "$current_block" = "?" ] && [ "$peer_count" = "?" ]; then
+        echo_error "✗ Unable to query Nethermind RPC"
+        echo_info "  Possible issues:"
+        echo_info "    - Nethermind is still starting up"
+        echo_info "    - RPC port 8545 is not accessible"
+        echo_info "    - Network connectivity issues"
+        return
+    fi
+
+    if [ "$sync_status" = "false" ]; then
+        echo_info "✓ Blockchain is fully synchronized"
+    elif [ -z "$sync_status" ] || [ "$sync_status" = "null" ]; then
+        if [ "$current_block" != "?" ]; then
+            echo_info "✓ Nethermind is responding (sync status unknown)"
+        else
+            echo_warn "⚠ Unable to determine sync status"
+        fi
+    else
+        # Parse sync progress if syncing
+        echo_warn "⚠ Blockchain is syncing..."
+
+        # Try to extract current and highest block from sync status
+        local highest_block=$(echo "$sync_status" | grep -o '"highestBlock":"[^"]*"' | cut -d'"' -f4)
+        if [ ! -z "$highest_block" ] && [ "$highest_block" != "null" ]; then
+            highest_block=$((16#${highest_block#0x}))
+            if [ "$current_block" != "?" ] && [ "$highest_block" -gt 0 ]; then
+                local sync_percent=$((current_block * 100 / highest_block))
+                echo_info "  Progress: $sync_percent% ($current_block / $highest_block)"
+            fi
+        fi
+    fi
+
+    # Warn if no peers
+    if [ "$peer_count" = "0" ]; then
+        echo_error "✗ No peers connected - node is isolated"
+    elif [ "$peer_count" = "?" ]; then
+        echo_warn "⚠ Unable to determine peer count"
+    fi
 }
 
-# Restore database
-restore_database() {
-    local backup_file=$1
-    if [ -z "$backup_file" ] || [ ! -f "$backup_file" ]; then
-        echo_error "Backup file not specified or doesn't exist"
+# Check SSL certificate expiry
+check_certificate_expiry() {
+    # Check if certbot volume exists and has certificates
+    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+
+    if ! docker volume ls --format "{{.Name}}" | grep -q "${project_name}_certbot_conf"; then
+        echo_info "ℹ No SSL certificates (certbot volume not found)"
+        return
+    fi
+
+    # Load service host from .env
+    local service_host=""
+    if [ -f ".env" ]; then
+        service_host=$(grep "^VERISCOPE_SERVICE_HOST=" .env 2>/dev/null | cut -d= -f2)
+    fi
+
+    if [ -z "$service_host" ] || [ "$service_host" = "localhost" ] || [ "$service_host" = "127.0.0.1" ]; then
+        echo_info "ℹ No SSL certificates configured (localhost deployment)"
+        return
+    fi
+
+    # Check certificate using certbot
+    local cert_info=$(docker-compose -f "$COMPOSE_FILE" run --rm --no-deps certbot certificates 2>/dev/null | grep -A 10 "Certificate Name: $service_host")
+
+    if [ -z "$cert_info" ]; then
+        echo_warn "⚠ No certificate found for $service_host"
+        return
+    fi
+
+    # Extract expiry date
+    local expiry_date=$(echo "$cert_info" | grep "Expiry Date:" | sed 's/.*Expiry Date: \([^ ]*\).*/\1/')
+
+    if [ -z "$expiry_date" ]; then
+        echo_warn "⚠ Unable to parse certificate expiry date"
+        return
+    fi
+
+    # Calculate days until expiry
+    local expiry_epoch=$(date -j -f "%Y-%m-%d" "$expiry_date" "+%s" 2>/dev/null || date -d "$expiry_date" "+%s" 2>/dev/null)
+    local current_epoch=$(date "+%s")
+    local days_until_expiry=$(( (expiry_epoch - current_epoch) / 86400 ))
+
+    echo_info "Certificate for: $service_host"
+    echo_info "Expires on: $expiry_date"
+    echo_info "Days until expiry: $days_until_expiry"
+
+    if [ "$days_until_expiry" -lt 0 ]; then
+        echo_error "✗ Certificate has EXPIRED"
+        echo_warn "  Run: ./docker-scripts/setup-docker.sh renew-ssl"
+    elif [ "$days_until_expiry" -lt 7 ]; then
+        echo_error "✗ Certificate expires in $days_until_expiry days (critical)"
+        echo_warn "  Run: ./docker-scripts/setup-docker.sh renew-ssl"
+    elif [ "$days_until_expiry" -lt 30 ]; then
+        echo_warn "⚠ Certificate expires in $days_until_expiry days"
+        echo_info "  Renewal will happen automatically"
+    else
+        echo_info "✓ Certificate is valid ($days_until_expiry days remaining)"
+    fi
+
+    # Check if auto-renewal is enabled
+    if docker ps --filter "name=veriscope-certbot" --format "{{.Names}}" | grep -q "veriscope-certbot"; then
+        echo_info "✓ Auto-renewal is enabled"
+    else
+        echo_warn "⚠ Auto-renewal is not running"
+        echo_info "  Enable: ./docker-scripts/setup-docker.sh setup-auto-renewal"
+    fi
+}
+
+# Start ngrok tunnel for remote access
+tunnel_start() {
+    echo_info "Starting ngrok tunnel for remote access..."
+
+    # Check if NGROK_AUTHTOKEN is set in .env
+    if ! grep -q "^NGROK_AUTHTOKEN=" .env 2>/dev/null || [ -z "$(grep "^NGROK_AUTHTOKEN=" .env | cut -d= -f2)" ]; then
+        echo_error "NGROK_AUTHTOKEN is not set in .env file"
+        echo ""
+        echo "Ngrok requires authentication. To use the tunnel:"
+        echo "  1. Sign up for a free account at: https://dashboard.ngrok.com/signup"
+        echo "  2. Get your authtoken from: https://dashboard.ngrok.com/get-started/your-authtoken"
+        echo "  3. Add it to .env file: NGROK_AUTHTOKEN=your_token_here"
+        echo ""
         return 1
     fi
 
-    echo_warn "This will restore the database from $backup_file. Are you sure? (y/N)"
-    read -r confirm
-    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-        echo_info "Restore cancelled"
-        return 0
+    # Check if tunnel is already running
+    if docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
+        echo -e "${YELLOW}[WARNING]${NC} Ngrok tunnel is already running"
+        tunnel_url
+        return
     fi
 
-    echo_info "Restoring database from $backup_file..."
-    docker-compose -f "$COMPOSE_FILE" exec -T postgres psql -U trustanchor trustanchor < "$backup_file"
-    echo_info "Database restored from $backup_file"
+    # Check if nginx is running (required for tunnel)
+    if ! docker ps --filter "name=veriscope-nginx" --filter "status=running" --format "{{.Names}}" | grep -q "veriscope-nginx"; then
+        echo_error "Nginx is not running. Please start the main services first with: $0 start"
+        return 1
+    fi
+
+    # Start only the tunnel container without starting other services
+    docker-compose --profile tunnel up -d --no-deps tunnel
+
+    echo_info "Waiting for tunnel to establish connection..."
+    sleep 5
+
+    tunnel_url
+}
+
+# Stop ngrok tunnel
+tunnel_stop() {
+    echo_info "Stopping ngrok tunnel..."
+    docker-compose --profile tunnel stop tunnel
+    docker-compose --profile tunnel rm -f tunnel
+    echo -e "${GREEN}[SUCCESS]${NC} Ngrok tunnel stopped"
+}
+
+# Get tunnel URL
+tunnel_url() {
+    if ! docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
+        echo_error "Ngrok tunnel is not running. Start it with: $0 tunnel-start"
+        return 1
+    fi
+
+    echo_info "Retrieving tunnel URL..."
+    echo ""
+
+    # Get the tunnel URL from logs (ngrok format: url=https://xxxx.ngrok-free.app or url=https://xxxx.ngrok.io)
+    local tunnel_url=$(docker logs veriscope-tunnel 2>&1 | grep -o 'url=https://[^[:space:]]*' | tail -1 | cut -d= -f2)
+
+    if [ -n "$tunnel_url" ]; then
+        echo "🌐 Ngrok Tunnel URL: $tunnel_url"
+        echo ""
+        echo "You can access your Veriscope instance at:"
+        echo "  $tunnel_url"
+        echo ""
+        echo "To update VERISCOPE_SERVICE_HOST in .env, run:"
+        echo "  sed -i '' 's|^VERISCOPE_SERVICE_HOST=.*|VERISCOPE_SERVICE_HOST=$(echo $tunnel_url | sed 's#https://##')|' .env"
+        echo ""
+        echo "Note: Upgrade your free ngrok account to get:"
+        echo "  - No interstitial warning page for visitors"
+        echo "  - Static domains that work with certbot"
+        echo "  - More concurrent tunnels and bandwidth"
+    else
+        echo -e "${YELLOW}[WARNING]${NC} Tunnel URL not found yet. The tunnel may still be establishing connection."
+        echo "Check logs with: docker logs veriscope-tunnel"
+    fi
+}
+
+# View tunnel logs
+tunnel_logs() {
+    if ! docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
+        echo_error "Ngrok tunnel is not running. Start it with: $0 tunnel-start"
+        return 1
+    fi
+
+    echo_info "Showing ngrok tunnel logs (Ctrl+C to exit)..."
+    docker logs -f veriscope-tunnel
+}
+
+# Backup database (delegates to modules/backup-restore.sh)
+backup_database() {
+    "$PROJECT_ROOT/docker-scripts/modules/backup-restore.sh" backup-db
+}
+
+# Restore database (delegates to modules/backup-restore.sh)
+restore_database() {
+    local backup_file=$1
+    if [ -z "$backup_file" ]; then
+        echo_error "Backup file not specified"
+        return 1
+    fi
+    "$PROJECT_ROOT/docker-scripts/modules/backup-restore.sh" restore-db "$backup_file"
 }
 
 # Full Laravel setup (similar to install_or_update_laravel)
@@ -755,7 +1826,10 @@ install_redis_bloom() {
 # Database seed
 seed_database() {
     echo_info "Seeding database..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force
+    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force; then
+        echo_error "Failed to seed database"
+        return 1
+    fi
     echo_info "Database seeded"
 }
 
@@ -771,6 +1845,140 @@ install_passport() {
     echo_info "Installing Laravel Passport..."
     docker-compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
     echo_info "Passport installed"
+}
+
+# Synchronize webhook secret between ta_node and dashboard
+# This function ensures both .env files have the same WEBHOOK_CLIENT_SECRET
+sync_webhook_secret() {
+    echo_info "Synchronizing webhook secret..."
+
+    local node_env="veriscope_ta_node/.env"
+    local dashboard_env="veriscope_ta_dashboard/.env"
+    local webhook_secret=""
+    local source_file=""
+
+    # Check if files exist
+    if [ ! -f "$node_env" ]; then
+        echo_error "TA Node .env not found: $node_env"
+        echo_info "Please run setup-chain first"
+        return 1
+    fi
+
+    if [ ! -f "$dashboard_env" ]; then
+        echo_warn "Dashboard .env not found: $dashboard_env"
+        echo_info "Webhook secret will only be set in TA Node"
+    fi
+
+    # Step 1: Determine source of truth for the secret
+    # Priority: 1) Existing ta_node secret, 2) Existing dashboard secret, 3) Generate new
+
+    # Try to extract from ta_node (supports both quoted and unquoted)
+    if grep -q "^WEBHOOK_CLIENT_SECRET=" "$node_env"; then
+        webhook_secret=$(grep "^WEBHOOK_CLIENT_SECRET=" "$node_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+        if [ ! -z "$webhook_secret" ]; then
+            source_file="ta_node"
+            echo_info "Found existing webhook secret in TA Node"
+        fi
+    fi
+
+    # If empty, try dashboard
+    if [ -z "$webhook_secret" ] && [ -f "$dashboard_env" ]; then
+        if grep -q "^WEBHOOK_CLIENT_SECRET=" "$dashboard_env"; then
+            webhook_secret=$(grep "^WEBHOOK_CLIENT_SECRET=" "$dashboard_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+            if [ ! -z "$webhook_secret" ]; then
+                source_file="dashboard"
+                echo_info "Found existing webhook secret in Dashboard"
+            fi
+        fi
+    fi
+
+    # If still empty, generate new
+    if [ -z "$webhook_secret" ]; then
+        webhook_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
+        if [ -z "$webhook_secret" ]; then
+            echo_error "Failed to generate webhook secret"
+            return 1
+        fi
+        source_file="generated"
+        echo_info "Generated new webhook secret"
+    fi
+
+    # Validate secret format (should be hex, at least 32 chars)
+    if [ ${#webhook_secret} -lt 32 ]; then
+        echo_error "Webhook secret is too short (${#webhook_secret} chars, minimum 32)"
+        return 1
+    fi
+
+    # Step 2: Update ta_node .env with validation
+    echo_info "Updating TA Node .env..."
+    if ! update_env_variable "$node_env" "WEBHOOK_CLIENT_SECRET" "$webhook_secret"; then
+        echo_error "Failed to update TA Node .env"
+        return 1
+    fi
+
+    # Verify ta_node update
+    local node_verify=$(grep "^WEBHOOK_CLIENT_SECRET=" "$node_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+    if [ "$node_verify" != "$webhook_secret" ]; then
+        echo_error "TA Node .env verification failed - secret mismatch"
+        return 1
+    fi
+
+    # Step 3: Update dashboard .env if it exists
+    if [ -f "$dashboard_env" ]; then
+        echo_info "Updating Dashboard .env..."
+        if ! update_env_variable "$dashboard_env" "WEBHOOK_CLIENT_SECRET" "$webhook_secret"; then
+            echo_error "Failed to update Dashboard .env"
+            return 1
+        fi
+
+        # Verify dashboard update
+        local dashboard_verify=$(grep "^WEBHOOK_CLIENT_SECRET=" "$dashboard_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+        if [ "$dashboard_verify" != "$webhook_secret" ]; then
+            echo_error "Dashboard .env verification failed - secret mismatch"
+            return 1
+        fi
+
+        echo_info "✓ Webhook secret synchronized successfully"
+        echo_info "  Secret length: ${#webhook_secret} characters"
+        echo_info "  Source: $source_file"
+    else
+        echo_warn "✓ Webhook secret set in TA Node only (Dashboard .env not found)"
+    fi
+
+    return 0
+}
+
+# Update or add an environment variable in a .env file
+# Usage: update_env_variable <file> <key> <value>
+update_env_variable() {
+    local env_file="$1"
+    local key="$2"
+    local value="$3"
+
+    if [ ! -f "$env_file" ]; then
+        echo_error "Environment file not found: $env_file"
+        return 1
+    fi
+
+    # Escape special characters in value for sed
+    local escaped_value=$(printf '%s\n' "$value" | sed 's/[[\.*^$/]/\\&/g')
+
+    # Check if key exists
+    if grep -q "^${key}=" "$env_file"; then
+        # Update existing key (supports quoted and unquoted)
+        portable_sed "s|^${key}=.*|${key}=\"${escaped_value}\"|" "$env_file"
+    else
+        # Add new key with quotes
+        echo "${key}=\"${value}\"" >> "$env_file"
+    fi
+
+    # Verify the update
+    if ! grep -q "^${key}=" "$env_file"; then
+        echo_error "Failed to update ${key} in ${env_file}"
+        return 1
+    fi
+
+    return 0
 }
 
 # Generate Ethereum sealer keypair for Trust Anchor
@@ -811,14 +2019,14 @@ create_sealer_keypair() {
 
         # Update or add TRUST_ANCHOR_ACCOUNT
         if grep -q "^TRUST_ANCHOR_ACCOUNT=" veriscope_ta_node/.env; then
-            sed -i "" "s#^TRUST_ANCHOR_ACCOUNT=.*#TRUST_ANCHOR_ACCOUNT=$address#" veriscope_ta_node/.env
+            portable_sed "s#^TRUST_ANCHOR_ACCOUNT=.*#TRUST_ANCHOR_ACCOUNT=$address#" veriscope_ta_node/.env
         else
             echo "TRUST_ANCHOR_ACCOUNT=$address" >> veriscope_ta_node/.env
         fi
 
         # Update or add TRUST_ANCHOR_PK
         if grep -q "^TRUST_ANCHOR_PK=" veriscope_ta_node/.env; then
-            sed -i "" "s#^TRUST_ANCHOR_PK=.*#TRUST_ANCHOR_PK=$privatekey#" veriscope_ta_node/.env
+            portable_sed "s#^TRUST_ANCHOR_PK=.*#TRUST_ANCHOR_PK=$privatekey#" veriscope_ta_node/.env
         else
             echo "TRUST_ANCHOR_PK=$privatekey" >> veriscope_ta_node/.env
         fi
@@ -826,7 +2034,7 @@ create_sealer_keypair() {
         # Update or add TRUST_ANCHOR_PREFNAME from VERISCOPE_COMMON_NAME
         if [ ! -z "$VERISCOPE_COMMON_NAME" ] && [ "$VERISCOPE_COMMON_NAME" != "unset" ]; then
             if grep -q "^TRUST_ANCHOR_PREFNAME=" veriscope_ta_node/.env; then
-                sed -i "" "s#^TRUST_ANCHOR_PREFNAME=.*#TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"#" veriscope_ta_node/.env
+                portable_sed "s#^TRUST_ANCHOR_PREFNAME=.*#TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"#" veriscope_ta_node/.env
             else
                 echo "TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"" >> veriscope_ta_node/.env
             fi
@@ -838,41 +2046,8 @@ create_sealer_keypair() {
 
         echo_info "Trust Anchor credentials saved (visible in container via bind mount)"
 
-        # Always ensure WEBHOOK_CLIENT_SECRET is set and synchronized
-        echo_info "Synchronizing webhook secret..."
-        local webhook_secret=""
-
-        # Check if ta_node already has a valid secret
-        if grep -q "^WEBHOOK_CLIENT_SECRET=\".\+\"$" veriscope_ta_node/.env; then
-            # Extract existing secret from ta_node
-            webhook_secret=$(grep "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env | sed 's/^WEBHOOK_CLIENT_SECRET="\(.*\)"$/\1/')
-            echo_info "Using existing webhook secret from veriscope_ta_node"
-        else
-            # Generate new secret if none exists or empty
-            webhook_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
-            echo_info "Generated new webhook secret"
-        fi
-
-        # Always update veriscope_ta_node/.env on host
-        if grep -q "^WEBHOOK_CLIENT_SECRET=" veriscope_ta_node/.env; then
-            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" veriscope_ta_node/.env
-        else
-            echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> veriscope_ta_node/.env
-        fi
-
-        # Always update veriscope_ta_dashboard/.env to keep them in sync
-        local laravel_env="veriscope_ta_dashboard/.env"
-        if [ -f "$laravel_env" ]; then
-            if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-                sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"#" "$laravel_env"
-            else
-                echo "WEBHOOK_CLIENT_SECRET=\"$webhook_secret\"" >> "$laravel_env"
-            fi
-
-            echo_info "Webhook secret synchronized between veriscope_ta_node and veriscope_ta_dashboard"
-        else
-            echo_warn "Laravel .env not found at $laravel_env - webhook secret only set in veriscope_ta_node"
-        fi
+        # Synchronize webhook secret between ta_node and dashboard
+        sync_webhook_secret
     else
         echo_warn "veriscope_ta_node/.env not found. Please run setup-chain first."
     fi
@@ -882,26 +2057,7 @@ create_sealer_keypair() {
 obtain_ssl_certificate() {
     echo_info "Setting up SSL certificate..."
 
-    # Check if in development mode
-    if is_dev_mode; then
-        echo_warn "Development mode detected!"
-        echo_info "Current settings:"
-        echo "  - Compose file: $COMPOSE_FILE"
-        echo "  - Host: $VERISCOPE_SERVICE_HOST"
-        echo "  - APP_ENV: ${APP_ENV:-not set}"
-        echo ""
-        echo_warn "SSL certificates are typically not needed in development."
-        echo_warn "Let's Encrypt will not issue certificates for localhost or .local/.test domains."
-        echo ""
-        read -p "Do you still want to obtain an SSL certificate? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo_info "Skipping SSL certificate setup."
-            return 0
-        fi
-    fi
-
-    # Load environment
+    # Load environment first to check domain
     if [ ! -f ".env" ]; then
         echo_error ".env file not found"
         return 1
@@ -917,15 +2073,63 @@ obtain_ssl_certificate() {
 
     echo_info "Domain: $VERISCOPE_SERVICE_HOST"
 
+    # Validate domain is suitable for Let's Encrypt BEFORE any other checks
+    if ! is_valid_ssl_domain "$VERISCOPE_SERVICE_HOST"; then
+        echo_error "INVALID DOMAIN: '$VERISCOPE_SERVICE_HOST' cannot be used with Let's Encrypt"
+        echo ""
+        echo_info "Let's Encrypt SSL certificates cannot be issued for:"
+        echo "  ✗ localhost or 127.0.0.1 (loopback addresses)"
+        echo "  ✗ .local domains (mDNS/Bonjour)"
+        echo "  ✗ .test domains (reserved for testing)"
+        echo "  ✗ .example domains (documentation only)"
+        echo "  ✗ .invalid or .localhost domains"
+        echo "  ✗ IP addresses (e.g., 192.168.1.1)"
+        echo "  ✗ Single-word hostnames without a TLD"
+        echo ""
+        echo_info "You need a publicly accessible domain name for SSL certificates."
+        echo_info "Valid examples:"
+        echo "  ✓ ta.yourdomain.com"
+        echo "  ✓ veriscope.example.org"
+        echo "  ✓ trustanchor.company.net"
+        echo ""
+        echo_info "Update VERISCOPE_SERVICE_HOST in .env and try again."
+        return 1
+    fi
+
+    # Check if in development mode (inform but don't block if they have a real domain)
+    if is_dev_mode; then
+        echo_warn "Development mode detected!"
+        echo_info "Current settings:"
+        echo "  - Compose file: $COMPOSE_FILE"
+        echo "  - Host: $VERISCOPE_SERVICE_HOST"
+        echo "  - APP_ENV: ${APP_ENV:-not set}"
+        echo ""
+        echo_warn "SSL certificates are typically not needed in development."
+        echo_info "However, you have a valid domain configured."
+        echo ""
+        read -p "Do you want to obtain an SSL certificate for $VERISCOPE_SERVICE_HOST? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo_info "Skipping SSL certificate setup."
+            return 0
+        fi
+    fi
+
     # Ensure nginx is running to serve ACME challenges
     echo_info "Ensuring nginx container is running..."
-    docker-compose -f "$COMPOSE_FILE" up -d nginx
+    if ! docker-compose -f "$COMPOSE_FILE" up -d nginx; then
+        echo_error "Failed to start nginx container"
+        return 1
+    fi
+
+    # Wait a moment for nginx to be ready
+    sleep 2
 
     # Use certbot via Docker with webroot mode
     echo_info "Obtaining certificate for $VERISCOPE_SERVICE_HOST using Docker..."
     echo_warn "Make sure port 80 is accessible from the internet"
 
-    docker-compose -f "$COMPOSE_FILE" run --rm \
+    if ! docker-compose -f "$COMPOSE_FILE" run --rm \
         certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -933,31 +2137,7 @@ obtain_ssl_certificate() {
         --agree-tos \
         --register-unsafely-without-email \
         --preferred-challenges http \
-        -d "$VERISCOPE_SERVICE_HOST"
-
-    if [ $? -eq 0 ]; then
-        echo_info "Certificate obtained successfully"
-
-        # Set certificate paths in .env
-        local cert_dir="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST"
-
-        if grep -q "^SSL_CERT_PATH=" .env; then
-            sed -i "" "s#^SSL_CERT_PATH=.*#SSL_CERT_PATH=$cert_dir/fullchain.pem#" .env
-        else
-            echo "SSL_CERT_PATH=$cert_dir/fullchain.pem" >> .env
-        fi
-
-        if grep -q "^SSL_KEY_PATH=" .env; then
-            sed -i "" "s#^SSL_KEY_PATH=.*#SSL_KEY_PATH=$cert_dir/privkey.pem#" .env
-        else
-            echo "SSL_KEY_PATH=$cert_dir/privkey.pem" >> .env
-        fi
-
-
-        echo_info "Certificate paths saved to .env"
-        echo_info "  Certificate: $cert_dir/fullchain.pem"
-        echo_info "  Private Key: $cert_dir/privkey.pem"
-    else
+        -d "$VERISCOPE_SERVICE_HOST"; then
         echo_error "Failed to obtain certificate"
         echo_info "Please ensure:"
         echo "  1. Port 80 is open and accessible"
@@ -965,6 +2145,39 @@ obtain_ssl_certificate() {
         echo "  3. No other web server is using port 80"
         return 1
     fi
+
+    echo_info "Certificate obtained successfully"
+
+    # Set certificate paths in .env
+    local cert_dir="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST"
+
+    if grep -q "^SSL_CERT_PATH=" .env; then
+        if ! portable_sed "s#^SSL_CERT_PATH=.*#SSL_CERT_PATH=$cert_dir/fullchain.pem#" .env; then
+            echo_error "Failed to update SSL_CERT_PATH in .env"
+            return 1
+        fi
+    else
+        if ! echo "SSL_CERT_PATH=$cert_dir/fullchain.pem" >> .env; then
+            echo_error "Failed to add SSL_CERT_PATH to .env"
+            return 1
+        fi
+    fi
+
+    if grep -q "^SSL_KEY_PATH=" .env; then
+        if ! portable_sed "s#^SSL_KEY_PATH=.*#SSL_KEY_PATH=$cert_dir/privkey.pem#" .env; then
+            echo_error "Failed to update SSL_KEY_PATH in .env"
+            return 1
+        fi
+    else
+        if ! echo "SSL_KEY_PATH=$cert_dir/privkey.pem" >> .env; then
+            echo_error "Failed to add SSL_KEY_PATH to .env"
+            return 1
+        fi
+    fi
+
+    echo_info "Certificate paths saved to .env"
+    echo_info "  Certificate: $cert_dir/fullchain.pem"
+    echo_info "  Private Key: $cert_dir/privkey.pem"
 }
 
 # Renew SSL certificate
@@ -979,18 +2192,96 @@ renew_ssl_certificate() {
     fi
 
     # Ensure nginx is running for webroot challenge
-    docker-compose -f "$COMPOSE_FILE" up -d nginx
+    echo_info "Ensuring nginx container is running..."
+    if ! docker-compose -f "$COMPOSE_FILE" up -d nginx; then
+        echo_error "Failed to start nginx container"
+        return 1
+    fi
+
+    # Wait a moment for nginx to be ready
+    sleep 2
 
     # Run certbot renew via Docker (uses webroot mode)
-    docker-compose -f "$COMPOSE_FILE" run --rm certbot renew
-
-    if [ $? -eq 0 ]; then
+    if docker-compose -f "$COMPOSE_FILE" run --rm certbot renew; then
         echo_info "Certificates renewed successfully"
         echo_info "Reloading nginx to pick up new certificates..."
-        docker-compose -f "$COMPOSE_FILE" exec nginx nginx -s reload
+        if ! docker-compose -f "$COMPOSE_FILE" exec nginx nginx -s reload; then
+            echo_warn "Failed to reload nginx - restart it manually if needed"
+            return 1
+        fi
     else
         echo_warn "Certificate renewal failed or certificates not due for renewal"
+        echo_info "Certificates are typically renewed when they have 30 days or less remaining"
+        return 1
     fi
+}
+
+# Setup automated certificate renewal (container-based)
+setup_auto_renewal() {
+    echo_info "Setting up automated SSL certificate renewal..."
+    echo ""
+
+    # Check if in development mode
+    if is_dev_mode; then
+        echo_warn "Development mode detected!"
+        echo_info "Auto-renewal is typically not needed in development."
+        echo ""
+        read -p "Do you still want to setup auto-renewal? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo_info "Skipping auto-renewal setup."
+            return 0
+        fi
+    fi
+
+    echo_info "Enabling certbot auto-renewal container..."
+    echo ""
+
+    # Check if certbot container is already running
+    if docker ps --filter "name=veriscope-certbot" --format "{{.Names}}" | grep -q "veriscope-certbot"; then
+        echo_warn "Certbot container is already running"
+        echo ""
+        read -p "Do you want to restart it? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo_info "Restarting certbot container..."
+            docker-compose -f "$COMPOSE_FILE" --profile production restart certbot
+        fi
+    else
+        # Start certbot container with auto-renewal
+        echo_info "Starting certbot container with 12-hour renewal check..."
+
+        if docker-compose -f "$COMPOSE_FILE" --profile production up -d certbot; then
+            echo_info "✅ Certbot auto-renewal container started successfully"
+        else
+            echo_error "Failed to start certbot container"
+            echo_info "Make sure nginx is running and certificates exist"
+            return 1
+        fi
+    fi
+
+    echo ""
+    echo_info "=========================================="
+    echo_info "Auto-renewal setup completed!"
+    echo_info "=========================================="
+    echo ""
+    echo_info "Certbot Configuration:"
+    echo_info "  - Renewal check interval: Every 12 hours"
+    echo_info "  - Auto-renews when: < 30 days until expiry"
+    echo_info "  - Certificate validity: 90 days (Let's Encrypt)"
+    echo_info "  - Container name: veriscope-certbot"
+    echo ""
+    echo_info "Monitoring:"
+    echo_info "  - View logs: docker logs veriscope-certbot"
+    echo_info "  - Follow logs: docker logs -f veriscope-certbot"
+    echo_info "  - Container status: docker ps --filter name=certbot"
+    echo ""
+    echo_info "Manual Operations:"
+    echo_info "  - Force renewal: docker-compose run --rm certbot renew --force-renewal"
+    echo_info "  - Check expiry: docker-compose run --rm certbot certificates"
+    echo_info "  - Stop auto-renewal: docker-compose stop certbot"
+    echo ""
+    echo_warn "Note: The certbot container will automatically reload nginx after renewal"
 }
 
 # Setup Nginx configuration
@@ -1229,19 +2520,19 @@ EOF
     else
         # Update existing values
         if grep -q "^NETHERMIND_ETHSTATS_SERVER=" .env; then
-            sed -i "" "s#^NETHERMIND_ETHSTATS_SERVER=.*#NETHERMIND_ETHSTATS_SERVER=$ethstats_server#" .env
+            portable_sed "s#^NETHERMIND_ETHSTATS_SERVER=.*#NETHERMIND_ETHSTATS_SERVER=$ethstats_server#" .env
         else
             echo "NETHERMIND_ETHSTATS_SERVER=$ethstats_server" >> .env
         fi
 
         if grep -q "^NETHERMIND_ETHSTATS_SECRET=" .env; then
-            sed -i "" "s#^NETHERMIND_ETHSTATS_SECRET=.*#NETHERMIND_ETHSTATS_SECRET=$ethstats_secret#" .env
+            portable_sed "s#^NETHERMIND_ETHSTATS_SECRET=.*#NETHERMIND_ETHSTATS_SECRET=$ethstats_secret#" .env
         else
             echo "NETHERMIND_ETHSTATS_SECRET=$ethstats_secret" >> .env
         fi
 
         if grep -q "^NETHERMIND_ETHSTATS_ENABLED=" .env; then
-            sed -i "" "s#^NETHERMIND_ETHSTATS_ENABLED=.*#NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled#" .env
+            portable_sed "s#^NETHERMIND_ETHSTATS_ENABLED=.*#NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled#" .env
         else
             echo "NETHERMIND_ETHSTATS_ENABLED=$ethstats_enabled" >> .env
         fi
@@ -1298,7 +2589,7 @@ setup_chain_config() {
 
         # Get the project name from docker-compose config
         local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
-        local volume_name="${project_name}_veriscope_artifacts"
+        local volume_name="${project_name}_artifacts"
 
         # Create volume if it doesn't exist
         docker volume create "$volume_name" >/dev/null 2>&1 || true
@@ -1324,11 +2615,11 @@ setup_chain_config() {
 
             # Update localhost URLs to Docker service names on host
             echo_info "Updating .env for Docker networking on host..."
-            sed -i "" 's|http://localhost:8545|http://nethermind:8545|g' veriscope_ta_node/.env
-            sed -i "" 's|ws://localhost:8545|ws://nethermind:8545|g' veriscope_ta_node/.env
-            sed -i "" 's|http://localhost:8000|http://nginx:80|g' veriscope_ta_node/.env
-            sed -i "" 's|redis://127.0.0.1:6379|redis://redis:6379|g' veriscope_ta_node/.env
-            sed -i "" 's|/opt/veriscope/veriscope_ta_node/artifacts/|/app/artifacts/|g' veriscope_ta_node/.env
+            portable_sed 's|http://localhost:8545|http://nethermind:8545|g' veriscope_ta_node/.env
+            portable_sed 's|ws://localhost:8545|ws://nethermind:8545|g' veriscope_ta_node/.env
+            portable_sed 's|http://localhost:8000|http://nginx:80|g' veriscope_ta_node/.env
+            portable_sed 's|redis://127.0.0.1:6379|redis://redis:6379|g' veriscope_ta_node/.env
+            portable_sed 's|/opt/veriscope/veriscope_ta_node/artifacts/|/app/artifacts/|g' veriscope_ta_node/.env
 
             echo_info "TA node .env configured (changes are immediately visible in container via bind mount)"
             echo_warn "Remember to run 'create-sealer' to generate Trust Anchor keypair"
@@ -1424,30 +2715,46 @@ refresh_static_nodes() {
 
     echo_info "Fetching current enode list from ethstats..."
 
-    # Query ethstats for current nodes
-    echo '[' > "$temp_file"
-    wscat -x '{"emit":["ready"]}' --connect "$ethstats_get_enodes" 2>/dev/null | \
-        grep enode | \
-        jq '.emit[1].nodes' 2>/dev/null | \
-        grep -oP '"enode://.*?"' | \
-        sed '$!s/$/,/' >> "$temp_file"
-    echo ']' >> "$temp_file"
+    # Query ethstats for current nodes using Alpine container (macOS compatible)
+    # This uses wscat + grep approach, running in Alpine where grep -P works
+    # Key: Must wait after connecting before sending ready message to receive init response
+    local nodes_json=$(docker run --rm node:alpine sh -c "
+        npm install -g wscat > /dev/null 2>&1
+        apk add --no-cache jq grep coreutils > /dev/null 2>&1
 
-    # Validate the generated JSON
-    if jq empty "$temp_file" 2>/dev/null; then
-        echo_info "Successfully retrieved static nodes"
+        # Send ready message after brief delay, then wait for response
+        (sleep 2 && echo '{\"emit\":[\"ready\"]}' && sleep 5) | timeout 10 wscat --connect '$ethstats_get_enodes' 2>/dev/null | \
+            grep enode | \
+            jq '.emit[1].nodes' 2>/dev/null | \
+            grep -oP '\"enode://[^\"]*\"' | \
+            awk 'BEGIN {print \"[\"} {if(NR>1) printf \",\\n\"; printf \"  %s\", \$0} END {print \"\\n]\"}'
+    " 2>/dev/null | jq -c '.')
 
-        # Update static-nodes.json
-        cp "$temp_file" "$static_nodes_file"
-        echo_info "Updated $static_nodes_file"
+    # Validate the generated JSON and check if not empty
+    if [ ! -z "$nodes_json" ] && jq empty <<<"$nodes_json" >/dev/null 2>&1; then
+        local enode_count
+        enode_count=$(jq -r 'length' <<<"$nodes_json" 2>/dev/null)
+        enode_count=${enode_count:-0}
 
-        # Display the nodes
-        echo_info "Current static nodes:"
-        cat "$static_nodes_file"
+        if [ "$enode_count" -gt 0 ]; then
+            printf '%s' "$nodes_json" | jq '.' > "$temp_file"
+            echo_info "Successfully retrieved $enode_count static nodes"
+
+            # Update static-nodes.json
+            cp "$temp_file" "$static_nodes_file"
+            echo_info "Updated $static_nodes_file"
+
+            # Display the nodes
+            echo_info "Current static nodes:"
+            cat "$static_nodes_file"
+        else
+            echo_warn "No static nodes retrieved from ethstats"
+            echo_info "Keeping existing static-nodes.json unchanged"
+            cat "$static_nodes_file"
+        fi
     else
-        echo_error "Failed to retrieve valid static nodes"
-        rm -f "$temp_file"
-        return 1
+        echo_error "Failed to parse static nodes from ethstats output"
+        echo_info "Keeping existing static-nodes.json unchanged"
     fi
 
     rm -f "$temp_file"
@@ -1463,15 +2770,29 @@ refresh_static_nodes() {
         return 0
     fi
 
-    # Query Nethermind for node info
-    local enode=$(curl -s -X POST -d '{"jsonrpc":"2.0","id":1, "method":"admin_nodeInfo", "params":[]}' http://localhost:8545/ | jq -r '.result.enode' 2>/dev/null)
+    # Get the project name and construct the network name dynamically
+    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local network_name="${project_name}_veriscope"
+
+    echo_info "Using Docker network: $network_name"
+
+    # Verify network exists
+    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+        echo_error "Docker network '$network_name' not found"
+        echo_info "Please ensure Docker Compose services are running"
+        return 1
+    fi
+
+    # Query Nethermind for node info using internal Docker network
+    # Run curl from a temporary Alpine container with access to the internal network
+    local enode=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"admin_nodeInfo\", \"params\":[]}" http://nethermind:8545/ | jq -r .result.enode' 2>/dev/null)
 
     if [ ! -z "$enode" ] && [ "$enode" != "null" ]; then
         echo_info "This node's enode: $enode"
 
         # Update .env with enode contact info
         if grep -q "^NETHERMIND_ETHSTATS_CONTACT=" .env; then
-            sed -i "" "s#^NETHERMIND_ETHSTATS_CONTACT=.*#NETHERMIND_ETHSTATS_CONTACT=$enode#" .env
+            portable_sed "s#^NETHERMIND_ETHSTATS_CONTACT=.*#NETHERMIND_ETHSTATS_CONTACT=$enode#" .env
         else
             echo "NETHERMIND_ETHSTATS_CONTACT=$enode" >> .env
         fi
@@ -1485,18 +2806,27 @@ refresh_static_nodes() {
     echo ""
     echo_warn "To apply changes, Nethermind needs to restart with cleared peer database"
     echo_warn "This will remove cached peer information and force reconnection"
-    echo -n "Restart Nethermind and clear peer cache? (y/N): "
-    read -r confirm
+
+    # Check if running interactively
+    if [ -t 0 ]; then
+        echo -n "Restart Nethermind and clear peer cache? (y/N): "
+        read -r confirm
+    else
+        # Non-interactive mode - auto-confirm restart
+        confirm="y"
+        echo_info "Running in non-interactive mode - automatically restarting Nethermind"
+    fi
 
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo_info "Stopping Nethermind..."
         docker-compose -f "$COMPOSE_FILE" stop nethermind
 
         echo_info "Clearing peer database..."
-        # Clear discovery and peer databases from volume
-        docker-compose -f "$COMPOSE_FILE" run --rm nethermind sh -c "rm -f /nethermind/db/discoveryNodes/SimpleFileDb.db /nethermind/db/peers/SimpleFileDb.db" 2>/dev/null || true
+        # Clear discovery and peer databases from volume using temporary alpine container
+        docker run --rm -v veriscope_nethermind_data:/data alpine sh -c "rm -f /data/db/discoveryNodes/SimpleFileDb.db /data/db/peers/SimpleFileDb.db" 2>/dev/null || true
+        echo_info "Peer cache cleared"
 
-        echo_info "Starting Nethermind with fresh peer database..."
+        echo_info "Starting Nethermind with updated configuration..."
         docker-compose -f "$COMPOSE_FILE" up -d nethermind
         echo_info "Nethermind restarted successfully"
     else
@@ -1509,55 +2839,108 @@ refresh_static_nodes() {
 # Regenerate webhook shared secret
 regenerate_webhook_secret() {
     echo_info "Regenerating webhook shared secret..."
+    echo ""
 
-    # Generate new secret
-    local new_secret=$(generate_secret)
-
-    echo_info "Generated new secret: $new_secret"
-
-    # Update Laravel .env on host
-    local laravel_env="veriscope_ta_dashboard/.env"
-    if [ -f "$laravel_env" ]; then
-        if grep -q "^WEBHOOK_CLIENT_SECRET=" "$laravel_env"; then
-            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$laravel_env"
-            echo_info "Updated host $laravel_env"
-        else
-            echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$laravel_env"
-            echo_info "Added WEBHOOK_CLIENT_SECRET to host $laravel_env"
-        fi
-    else
-        echo_warn "Laravel .env not found at $laravel_env"
+    # Confirm action
+    echo_warn "This will generate a new webhook secret and update both services"
+    echo_warn "The old secret will be invalidated"
+    echo ""
+    read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo_info "Operation cancelled"
+        return 0
     fi
 
-    # Update Node.js .env on host
     local node_env="veriscope_ta_node/.env"
-    if [ -f "$node_env" ]; then
-        if grep -q "^WEBHOOK_CLIENT_SECRET=" "$node_env"; then
-            sed -i "" "s#^WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=\"$new_secret\"#" "$node_env"
-            echo_info "Updated host $node_env"
-        else
-            echo "WEBHOOK_CLIENT_SECRET=\"$new_secret\"" >> "$node_env"
-            echo_info "Added WEBHOOK_CLIENT_SECRET to host $node_env"
+    local dashboard_env="veriscope_ta_dashboard/.env"
+
+    # Check if files exist
+    if [ ! -f "$node_env" ]; then
+        echo_error "TA Node .env not found: $node_env"
+        return 1
+    fi
+
+    # Generate new secret (longer than generate_secret default)
+    local new_secret=$(openssl rand -hex 32 2>/dev/null || xxd -l 32 -p /dev/urandom | tr -d '\n')
+
+    if [ -z "$new_secret" ]; then
+        echo_error "Failed to generate new secret"
+        return 1
+    fi
+
+    echo_info "Generated new secret (${#new_secret} characters)"
+    echo ""
+
+    # Update TA Node .env
+    echo_info "Updating TA Node .env..."
+    if ! update_env_variable "$node_env" "WEBHOOK_CLIENT_SECRET" "$new_secret"; then
+        echo_error "Failed to update TA Node .env"
+        return 1
+    fi
+
+    # Verify TA Node update
+    local node_verify=$(grep "^WEBHOOK_CLIENT_SECRET=" "$node_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+    if [ "$node_verify" != "$new_secret" ]; then
+        echo_error "TA Node .env verification failed"
+        return 1
+    fi
+    echo_info "✓ TA Node updated and verified"
+
+    # Update Dashboard .env if it exists
+    if [ -f "$dashboard_env" ]; then
+        echo_info "Updating Dashboard .env..."
+        if ! update_env_variable "$dashboard_env" "WEBHOOK_CLIENT_SECRET" "$new_secret"; then
+            echo_error "Failed to update Dashboard .env"
+            return 1
         fi
+
+        # Verify Dashboard update
+        local dashboard_verify=$(grep "^WEBHOOK_CLIENT_SECRET=" "$dashboard_env" | head -1 | cut -d= -f2 | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/")
+        if [ "$dashboard_verify" != "$new_secret" ]; then
+            echo_error "Dashboard .env verification failed"
+            return 1
+        fi
+        echo_info "✓ Dashboard updated and verified"
     else
-        echo_warn "Node.js .env not found at $node_env"
+        echo_warn "Dashboard .env not found - only TA Node updated"
     fi
 
-    # Restart affected services to reload updated .env
+    echo ""
+    echo_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo_info "Restarting services to reload configuration..."
+    echo_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+    local restart_count=0
+
+    # Restart app service
     if docker-compose -f "$COMPOSE_FILE" ps app 2>/dev/null | grep -q "Up"; then
+        echo_info "Restarting app service..."
         docker-compose -f "$COMPOSE_FILE" restart app
-        echo_info "Restarted Laravel app service"
+        restart_count=$((restart_count + 1))
+    else
+        echo_warn "App service not running (skip restart)"
     fi
 
+    # Restart ta-node service
     if docker-compose -f "$COMPOSE_FILE" ps ta-node 2>/dev/null | grep -q "Up"; then
+        echo_info "Restarting ta-node service..."
         docker-compose -f "$COMPOSE_FILE" restart ta-node
-        echo_info "Restarted Node.js ta-node service"
+        restart_count=$((restart_count + 1))
+    else
+        echo_warn "TA Node service not running (skip restart)"
     fi
 
-    echo_info "Webhook secret regenerated successfully"
-    echo_warn "New secret: $new_secret (save this securely!)"
+    echo ""
+    echo_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo_info "✅ Webhook secret regenerated successfully!"
+    echo_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo_info "  Services restarted: $restart_count"
+    echo_info "  Secret length: ${#new_secret} characters"
+    echo ""
+    echo_warn "⚠️  IMPORTANT: Save this secret securely!"
+    echo_warn "     New secret: $new_secret"
+    echo ""
 }
 
 # Menu
@@ -1595,6 +2978,7 @@ menu() {
     echo ""
     echo "SSL Management:"
     echo "  u) Renew SSL certificate"
+    echo "  a) Setup automated certificate renewal"
     echo ""
     echo "Laravel Maintenance:"
     echo "  m) Run migrations"
@@ -1608,6 +2992,12 @@ menu() {
     echo ""
     echo "Health & Monitoring:"
     echo "  h) Health check"
+    echo ""
+    echo "Remote Access (Ngrok):"
+    echo "  T) Start tunnel"
+    echo "  S) Stop tunnel"
+    echo "  U) Show tunnel URL"
+    echo "  G) Show tunnel logs"
     echo ""
     echo "Backup & Restore:"
     echo "  b) Backup database"
@@ -1626,6 +3016,7 @@ menu() {
         1)
             check_docker
             check_env
+            preflight_checks
             ;;
         2)
             build_images
@@ -1674,43 +3065,164 @@ menu() {
             ;;
         i)
             FULL_INSTALL_MODE=true
-            check_docker
-            check_env
-            generate_postgres_credentials
-            setup_chain_config
-            build_images
-            create_sealer_keypair
-            obtain_ssl_certificate
-            setup_nginx_config
 
-            # Reset volumes to ensure clean state with new credentials
-            echo_info "Ensuring clean database and cache volumes..."
-            docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+            echo_info "========================================="
+            echo_info "  Veriscope Full Installation"
+            echo_info "========================================="
+            echo ""
+
+            # Step 1: Pre-flight checks
+            echo_info "Step 1/11: Running pre-flight checks..."
+            if ! check_docker; then
+                echo_error "Docker check failed - aborting installation"
+                exit 1
+            fi
+
+            if ! check_env; then
+                echo_error "Environment check failed - aborting installation"
+                exit 1
+            fi
+
+            # Step 2: Generate credentials
+            echo_info "Step 2/11: Generating PostgreSQL credentials..."
+            if ! generate_postgres_credentials; then
+                echo_error "Failed to generate credentials - aborting installation"
+                exit 1
+            fi
+
+            # Step 3: Build images
+            echo_info "Step 3/11: Building Docker images..."
+            if ! build_images; then
+                echo_error "Failed to build images - aborting installation"
+                exit 1
+            fi
+
+            # Step 4: Create sealer keypair
+            echo_info "Step 4/11: Creating sealer keypair..."
+            if ! create_sealer_keypair; then
+                echo_error "Failed to create sealer keypair - aborting installation"
+                exit 1
+            fi
+
+            # Step 5: SSL certificate (optional - may fail in dev mode)
+            echo_info "Step 5/11: Obtaining SSL certificate..."
+            if ! obtain_ssl_certificate; then
+                echo_warn "SSL certificate setup skipped or failed (continuing...)"
+            fi
+
+            # Step 6: Setup nginx config
+            echo_info "Step 6/11: Setting up Nginx configuration..."
+            if ! setup_nginx_config; then
+                echo_error "Failed to setup Nginx config - aborting installation"
+                exit 1
+            fi
+
+            # Step 7: Reset volumes to ensure clean state with new credentials
+            echo_info "Step 7/11: Resetting database and cache volumes..."
+            if ! stop_services; then
+                echo_warn "Failed to stop services cleanly - continuing..."
+            fi
 
             # Get the project name from docker-compose config
-            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+
+            if [ -z "$project_name" ]; then
+                echo_error "Failed to determine project name - aborting installation"
+                exit 1
+            fi
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
-            docker volume rm "${project_name}_redis_data" 2>/dev/null || true
-            echo_info "PostgreSQL and Redis volumes reset (Nethermind data preserved)"
+            local removed=0
+            for volume in postgres_data redis_data app_data artifacts; do
+                local volume_name="${project_name}_${volume}"
+                if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+                    if docker volume rm "$volume_name" 2>/dev/null; then
+                        echo_info "✓ Removed volume: $volume_name"
+                        removed=$((removed + 1))
+                    else
+                        echo_warn "✗ Failed to remove volume: $volume_name (may not exist)"
+                    fi
+                fi
+            done
+            echo_info "Removed $removed volume(s) (Nethermind data preserved)"
 
-            start_services
-            sleep 15
-            full_laravel_setup
-            install_horizon
-            install_passport_env
-            install_address_proofs
+            # Step 8: Start services and wait for readiness
+            echo_info "Step 8/11: Starting services..."
+            if ! start_services; then
+                echo_error "Failed to start services - aborting installation"
+                exit 1
+            fi
+
+            echo_info "Waiting for services to be ready..."
+            if ! wait_for_services_ready 120; then
+                echo_error "Services failed to become ready - aborting installation"
+                echo_info "Check service logs: docker-compose -f $COMPOSE_FILE logs"
+                exit 1
+            fi
+
+            # Step 9: Setup chain config AFTER volumes are reset and services are started
+            echo_info "Step 9/11: Setting up chain configuration..."
+            if ! setup_chain_config; then
+                echo_error "Failed to setup chain config - aborting installation"
+                exit 1
+            fi
+
+            # Restart ta-node to pick up artifacts
+            echo_info "Restarting ta-node to load chain artifacts..."
+            if ! docker-compose -f "$COMPOSE_FILE" restart ta-node; then
+                echo_error "Failed to restart ta-node - aborting installation"
+                exit 1
+            fi
+
+            # Wait for ta-node to be ready after restart
+            if ! wait_for_ta_node_ready 60; then
+                echo_error "TA Node failed to restart - aborting installation"
+                exit 1
+            fi
+
+            # Step 10: Laravel setup
+            echo_info "Step 10/11: Running Laravel setup..."
+            if ! full_laravel_setup; then
+                echo_error "Laravel setup failed - aborting installation"
+                exit 1
+            fi
+
+            # Step 11: Install additional components
+            echo_info "Step 11/11: Installing additional components..."
+
+            if ! install_horizon; then
+                echo_warn "Horizon installation failed (continuing...)"
+            fi
+
+            if ! install_passport_env; then
+                echo_warn "Passport environment setup failed (continuing...)"
+            fi
+
+            if ! install_address_proofs; then
+                echo_warn "Address proofs installation failed (continuing...)"
+            fi
+
+            # Create admin (optional - interactive)
             create_admin
-            echo_info "Full installation completed!"
+
+            echo ""
+            echo_info "========================================="
+            echo_info "  Full Installation Completed!"
+            echo_info "========================================="
             echo ""
             echo_info "Post-installation steps:"
             echo_info "  1. Create admin user: ./docker-scripts/setup-docker.sh create-admin"
             echo_info "  2. (Optional) Download address proofs: ./docker-scripts/setup-docker.sh install-address-proofs"
             echo ""
+
+            # Get service host from .env
+            local service_host=$(grep "^VERISCOPE_SERVICE_HOST=" .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "localhost")
+            service_host=${service_host:-localhost}
+
             echo_info "Access your Veriscope instance at:"
-            echo_info "  - Dashboard: http://localhost"
-            echo_info "  - Arena: http://localhost/arena"
+            echo_info "  - Dashboard: http://${service_host}"
+            echo_info "  - Arena: http://${service_host}/arena"
+            echo ""
             ;;
         s)
             show_status
@@ -1731,6 +3243,9 @@ menu() {
             ;;
         u)
             renew_ssl_certificate
+            ;;
+        a)
+            setup_auto_renewal
             ;;
         m)
             run_migrations
@@ -1758,6 +3273,18 @@ menu() {
             ;;
         h)
             health_check
+            ;;
+        T)
+            tunnel_start
+            ;;
+        S)
+            tunnel_stop
+            ;;
+        U)
+            tunnel_url
+            ;;
+        G)
+            tunnel_logs
             ;;
         b)
             backup_database
@@ -1798,6 +3325,9 @@ else
         check)
             check_docker
             check_env
+            ;;
+        preflight)
+            preflight_checks
             ;;
         build)
             build_images
@@ -1841,6 +3371,18 @@ else
         health)
             health_check
             ;;
+        tunnel-start)
+            tunnel_start
+            ;;
+        tunnel-stop)
+            tunnel_stop
+            ;;
+        tunnel-url)
+            tunnel_url
+            ;;
+        tunnel-logs)
+            tunnel_logs
+            ;;
         gen-postgres)
             generate_postgres_credentials
             ;;
@@ -1858,6 +3400,9 @@ else
             ;;
         renew-ssl)
             renew_ssl_certificate
+            ;;
+        setup-auto-renewal)
+            setup_auto_renewal
             ;;
         full-laravel-setup)
             full_laravel_setup
@@ -1895,6 +3440,15 @@ else
         full-install)
             check_docker
             check_env
+
+            # Run pre-flight checks
+            echo ""
+            echo_info "Running pre-flight checks before installation..."
+            if ! preflight_checks; then
+                exit 1
+            fi
+            echo ""
+
             generate_postgres_credentials
             setup_chain_config
             build_images
@@ -1910,7 +3464,9 @@ else
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
             docker volume rm "${project_name}_redis_data" 2>/dev/null || true
-            echo_info "PostgreSQL and Redis volumes reset (Nethermind data preserved)"
+            docker volume rm "${project_name}_app_data" 2>/dev/null || true
+            docker volume rm "${project_name}_artifacts" 2>/dev/null || true
+            echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
 
             start_services
             sleep 15
@@ -1938,6 +3494,7 @@ else
             echo ""
             echo "Commands:"
             echo "  check                      - Check Docker requirements"
+            echo "  preflight                  - Run pre-flight system checks (ports, disk, network)"
             echo "  build                      - Build Docker images"
             echo "  start                      - Start all services"
             echo "  stop                       - Stop all services"
@@ -1953,12 +3510,17 @@ else
             echo "  install-node               - Install Node.js dependencies"
             echo "  install-php                - Install Laravel dependencies"
             echo "  health                     - Run health check"
+            echo "  tunnel-start               - Start ngrok tunnel for remote access"
+            echo "  tunnel-stop                - Stop ngrok tunnel"
+            echo "  tunnel-url                 - Get ngrok tunnel URL"
+            echo "  tunnel-logs                - View ngrok tunnel logs"
             echo "  gen-postgres               - Generate PostgreSQL credentials"
             echo "  setup-chain                - Setup chain-specific configuration"
             echo "  create-sealer              - Generate Trust Anchor Ethereum keypair"
             echo "  obtain-ssl                 - Obtain SSL certificate (Let's Encrypt)"
             echo "  setup-nginx                - Setup Nginx reverse proxy configuration"
             echo "  renew-ssl                  - Renew SSL certificates"
+            echo "  setup-auto-renewal         - Setup automated certificate renewal"
             echo "  full-laravel-setup         - Full Laravel setup (install + migrate + seed)"
             echo "  install-horizon            - Install Laravel Horizon"
             echo "  install-passport-env       - Install Passport environment"
