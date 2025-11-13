@@ -24,3 +24,4 @@ infra/terraform/scripts/__pycache__/*
 docker-scripts/nginx/nginx-ssl.conf
 
 veriscope_ta_dashboard/.env
+backups/*
