@@ -1,0 +1,255 @@
+---
+- name: Install and configure Trust Anchor dashboard app
+  hosts: web
+  gather_facts: true
+  vars:
+    app_url: "https://{{ inventory_hostname }}"
+    shyft_onboarding_url: "https://{{ inventory_hostname }}"
+    webhook_client_secret: "{{ lookup('password', 'credentials/webhook-client-secret/' + inventory_hostname + ' length=20 chars=ascii_letters,digits', seed=inventory_hostname) }}"
+
+  tasks:
+    - name: Fetch TA DB Cluster secrets
+      ansible.builtin.include_role:
+        name: fetch_ta_db_secrets
+      vars:
+        secret_manager_type: "{{ ta_db_secrets }}"
+      when: operation == "install"
+
+    - name: Print TA DB Cluster var - TA Dashboard
+      ansible.builtin.debug:
+        var: ta_dashboard_db_cluster
+      when: debug is true and operation == "install"
+
+    - name: Print TA DB cluster info - TA Dashboard
+      ansible.builtin.debug:
+        msg: "{{ pgsql_cltr_host }}:{{ pgsql_cltr_port }} ; {{ ta_db_name }} ; {{ ta_db_user }} : {{ ta_db_userpwd }}"
+      when: debug is true and operation == "install"
+
+    - name: Check inputs for install and update - TA Dashboard app
+      ansible.builtin.assert:
+        that:
+          - veriscope_service_hostname is defined and veriscope_service_hostname is truthy
+          - veriscope_target is defined and veriscope_target is truthy
+          - service_user is defined and service_user is truthy
+          - operation is defined
+          - operation in ['install', 'update']
+        success_msg: Required inputs provided. Proceeding to install and configure Trust Anchor Dashboard (PHP Laravel) app.
+        fail_msg: Required inputs not provided. Please provide required values and try again.
+      when: operation in ['install', 'update']
+
+    - name: Check extra inputs for install - TA Dashboard app
+      ansible.builtin.assert:
+        that:
+          - app_url is defined
+          - shyft_onboarding_url is defined
+          - webhook_client_secret is defined
+          - pgsql_cltr_host is defined
+          - pgsql_cltr_port is defined
+          - ta_db_name is defined and ta_db_name is truthy
+          - ta_db_user is defined and ta_db_user is truthy
+          - ta_db_userpwd is defined and ta_db_userpwd is truthy
+        success_msg: Required inputs provided. Proceeding to install and configure Trust Anchor Dashboard (PHP Laravel) app.
+        fail_msg: Required inputs not provided. Please provide required values and try again.
+      when: operation == 'install'
+
+    # pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+    # chown -R $SERVICE_USER .
+    - name: Change veriscope_ta_dashboard dir owner
+      ansible.builtin.file:
+        path: "{{ dashboard_root }}"
+        owner: "{{ service_user }}"
+        recurse: true
+      when: operation in ['install', 'update']
+      become: true
+
+    - name: Set TA dashboard dir perms - Install TA Dashboard app
+      ansible.builtin.import_tasks: ../tasks/set-ta-dashboard-dir-perms.yaml
+      when: operation in ['install', 'update']
+
+    - name: Set DB connection info in TA Dashboard app config file
+      ansible.builtin.import_tasks: ../tasks/update-ta-dashboard-env-db-conn.yaml
+      when: operation in ['install']
+
+    # sed -i "s#APP_URL=.*#APP_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
+    - name: Set app URL in TA Dashboard app config file
+      ansible.builtin.replace:
+        path: "{{ dashboard_config_path }}"
+        regexp: '^(APP_URL=)(.*)$'
+        replace: '\1{{ app_url }}'
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+      when: operation == 'install'
+
+    # sed -i "s#SHYFT_ONBOARDING_URL=.*#SHYFT_ONBOARDING_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
+    - name: Set Shyft Onboarding URL in TA Dashboard app config file
+      ansible.builtin.replace:
+        path: "{{ dashboard_config_path }}"
+        regexp: '^(SHYFT_ONBOARDING_URL=)(.*)$'
+        replace: '\1{{ shyft_onboarding_url }}'
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+      when: operation == 'install'
+
+    - name: Ensure webhook client secret key is in the file with no value in TA Dashboard app config file
+      ansible.builtin.replace:
+        path: "{{ dashboard_config_path }}"
+        regexp: '^(WEBHOOK_CLIENT_SECRET=)(.*)$'
+        replace: '\1'
+      when: operation in ['install', 'update']
+
+    # sed -i "s#WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$SHARED_SECRET#g" $ENVDEST
+    - name: Set webhook client secret (shared secret) in TA Dashboard app config file
+      ansible.builtin.lineinfile:
+        path: "{{ dashboard_config_path }}"
+        regexp: '^(WEBHOOK_CLIENT_SECRET=)'
+        line: 'WEBHOOK_CLIENT_SECRET={{ webhook_client_secret }}'
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+      when: operation in ['install', 'update']
+
+    # su $SERVICE_USER -c "npm install"
+    - name: Install node.js deps of TA Dashboard app (npm install)
+      community.general.npm:
+        path: "{{ dashboard_root }}"
+        state: latest
+      become: true
+      become_user: "{{ service_user }}"
+      when: operation in ['install', 'update']
+
+    # su $SERVICE_USER -c "npm run development"
+    - name: Start node.js components of TA Dashboard app (npm run)
+      shell: npm run development
+      args:
+        chdir: "{{ dashboard_root }}"
+        executable: /bin/bash
+      become: true
+      become_user: "{{ service_user }}"
+      when: operation in ['install', 'update']
+
+    # echo "Setting up PHP and deploying..."
+    # su $SERVICE_USER -c "composer install"
+    # su $SERVICE_USER -c "php artisan migrate"
+    - name: Install PHP deps of TA Dashboard app (composer install and php artisan migrate)
+      shell: |
+        composer install
+        php artisan migrate
+      args:
+        chdir: "{{ dashboard_root }}"
+        executable: /bin/bash
+      when: operation in ['install', 'update']
+
+    # # ONLY ONCE. SHOULD not run on update
+    # su $SERVICE_USER -c "php artisan db:seed"
+    # su $SERVICE_USER -c "php artisan key:generate"
+    # su $SERVICE_USER -c "php artisan passport:install"
+    # su $SERVICE_USER -c "php artisan encrypt:generate" <-- this line waits for user input if running for second time.
+    # su $SERVICE_USER -c "php artisan passportenv:link"
+    # # ONLY ONCE. SHOULD not run on update
+    - name: Deploy Trust Anchor dashboard app
+      shell: |
+        php artisan db:seed
+        php artisan key:generate
+        php artisan passport:install
+        php artisan encrypt:generate
+        php artisan passportenv:link
+      args:
+        chdir: "{{ dashboard_root }}"
+        executable: /bin/bash
+      when: operation == 'install'
+
+    # if ! test -s "/etc/systemd/system/ta.service"; then
+    #   echo "Deploying systemd service definitions: ta ta-wss ta-schedule"
+    #   cp scripts/ta-schedule.service /etc/systemd/system/
+    #   cp scripts/ta-wss.service /etc/systemd/system/
+    #   cp scripts/ta.service /etc/systemd/system/
+
+    #   sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta-schedule.service
+    #   sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta-wss.service
+    #   sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta.service
+    # fi
+    - name: Create ta, ta-wss, ta-schedule services configs
+      ansible.builtin.template:
+        src: templates/{{ item }}.service.j2
+        dest: /etc/systemd/system/{{ item }}.service
+      become: true
+      with_items:
+        - ta-schedule
+        - ta-wss
+        - ta
+      when: operation == 'install'
+
+    # systemctl daemon-reload
+    - name: Force systemd to reload configs - Install TA Dashboard app
+      ansible.builtin.systemd:
+        daemon_reload: true
+      become: true
+      when: operation == 'install'
+
+    # echo "Restarting PHP-based services..."
+    # systemctl enable ta-schedule
+    # systemctl enable ta-wss
+    # systemctl enable ta
+    # systemctl restart ta-schedule
+    # systemctl restart ta-wss
+    # systemctl restart ta
+    - name: Enable and restart ta, ta-wss and ta-schedule services
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: true
+        state: restarted
+      become: true
+      with_items:
+        - ta-schedule
+        - ta-wss
+        - ta
+      when: operation == 'install'
+
+    # pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+    # su $SERVICE_USER -c "composer update"
+    # # ONLY ONCE.
+    # su $SERVICE_USER -c "php artisan horizon:publish"
+    # # ONLY ONCE.
+    # su $SERVICE_USER -c "php artisan migrate"
+    # popd >/dev/null
+    - name: Publish horizon - Install TA Dashboard app
+      shell: |
+        composer update
+        php artisan horizon:publish
+        php artisan migrate
+      args:
+        chdir: "{{ dashboard_root }}"
+        executable: /bin/bash
+      when: operation == 'install'
+
+      # if ! test -s "/etc/systemd/system/horizon.service"; then
+      #   echo "Deploying systemd service definitions: horizon"
+      #   cp scripts/horizon.service /etc/systemd/system/
+      #   sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/horizon.service
+      # fi
+    - name: Create horizon services configs
+      ansible.builtin.template:
+        src: templates/{{ item }}.service.j2
+        dest: /etc/systemd/system/{{ item }}.service
+      become: true
+      with_items:
+        - horizon
+      when: operation == 'install'
+
+      # systemctl daemon-reload
+    - name: Force systemd to reload configs - Install TA Dashboard app
+      ansible.builtin.systemd:
+        daemon_reload: true
+      become: true
+      when: operation == 'install'
+
+    # systemctl enable horizon
+    # systemctl restart horizon
+    - name: Enable and restart horizon services
+      ansible.builtin.service:
+        name: "{{ item }}"
+        enabled: true
+        state: restarted
+      become: true
+      with_items:
+        - horizon
+      when: operation == 'install'

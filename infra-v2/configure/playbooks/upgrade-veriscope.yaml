@@ -1,0 +1,73 @@
+---
+- name: Stop all services and backup configs
+  hosts: web
+  gather_facts: true
+  vars:
+    # controller_dt: "{{ lookup('pipe','date +%Y-%m-%d-%H-%M-%S') }}"
+    file_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+  tasks:
+    - name: Stop veriscope services - Upgrade veriscope
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: stopped
+      ignore_errors: false
+      become: true
+      with_items: "{{ veriscope_web_services }}"
+
+    - name: Set file_timestamp fact - Upgrade veriscope
+      ansible.builtin.set_fact:
+        file_timestamp: "{{ file_timestamp }}"
+
+    - name: Backup config files for safety reasons!
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        owner: veris
+        group: veris
+        force: true
+      with_items:
+        - { src: "{{ dashboard_config_path }}",
+            dest: "{{ dashboard_config_path }}-{{ file_timestamp }}.backup" }
+        - { src: "{{ api_config_path }}",
+            dest: "{{ api_config_path }}-{{ file_timestamp }}.backup" }
+      become: true
+
+- name: Copy code onto the target host - Upgrade veriscope
+  ansible.builtin.import_playbook: prepare-git.yaml
+  vars:
+    operation: update
+
+- name: Restore backed up configs - Upgrade veriscope
+  hosts: web
+  gather_facts: false
+  tasks:
+    - name: Restore backed up configs
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        owner: veris
+        group: veris
+        force: true
+      with_items:
+        - { dest: "{{ dashboard_config_path }}",
+            src: "{{ dashboard_config_path }}-{{ file_timestamp }}.backup" }
+        - { dest: "{{ api_config_path }}",
+            src: "{{ api_config_path }}-{{ file_timestamp }}.backup" }
+      become: true
+
+- name: Upgrade operation on TA API
+  ansible.builtin.import_playbook: install-ta-api.yaml
+  when: "'veriscope_ta_node' in apps_to_update"
+  vars:
+    operation: update
+
+- name: Upgrade operation on TA dashboard webapp
+  ansible.builtin.import_playbook: install-ta-dashboard-webapp.yaml
+  when: "'veriscope_ta_dashboard' in apps_to_update"
+  vars:
+    operation: update
+
+- name: Restart all services - Upgrade veriscope
+  ansible.builtin.import_playbook: restart-services.yaml
