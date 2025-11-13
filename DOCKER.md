@@ -299,15 +299,21 @@ Interactive menu for all common operations:
 
 #### backup-restore.sh - Backup Operations
 
+**Location**: `docker-scripts/modules/backup-restore.sh`
+
 ```bash
 # Full backup
-./docker-scripts/backup-restore.sh backup
+./docker-scripts/modules/backup-restore.sh backup
 
 # Restore from backup
-./docker-scripts/backup-restore.sh restore /path/to/backup
+./docker-scripts/modules/backup-restore.sh restore /path/to/backup
 
 # List backups
-./docker-scripts/backup-restore.sh list
+./docker-scripts/modules/backup-restore.sh list
+
+# Or use via setup-docker.sh
+./docker-scripts/setup-docker.sh backup
+./docker-scripts/setup-docker.sh restore <file>
 ```
 
 ## Service-Specific Operations
@@ -1023,12 +1029,18 @@ See `scripts/setup-vasp.sh` for the monolithic setup instructions.
 
 ## Additional Resources
 
+### Project Documentation
+- [docker-scripts/README.md](docker-scripts/README.md) - Detailed script documentation
+- [docker-scripts/CODE_QUALITY.md](docker-scripts/CODE_QUALITY.md) - Code quality standards for Docker scripts
+- [docker-scripts/FEATURE_COMPARISON.md](docker-scripts/FEATURE_COMPARISON.md) - Feature comparison: bare-metal vs Docker setup
+- [ARCHITECTURE_MIGRATION.md](ARCHITECTURE_MIGRATION.md) - Architecture migration guide
+
+### External Resources
 - [Docker Documentation](https://docs.docker.com/)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [Laravel Documentation](https://laravel.com/docs)
 - [Nethermind Documentation](https://docs.nethermind.io/)
 - [Redis Documentation](https://redis.io/docs/)
-- [docker-scripts/README.md](docker-scripts/README.md) - Detailed script documentation
 
 ## Support
 
