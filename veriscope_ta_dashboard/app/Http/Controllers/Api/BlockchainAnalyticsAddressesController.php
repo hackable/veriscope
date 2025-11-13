@@ -47,8 +47,9 @@ class BlockchainAnalyticsAddressesController extends Controller
 
         // // sort logic
         if(!empty($input['sort'])) {
-          $sort = json_decode($input['sort']);
-          if($sort->field != '' && $sort->type != '') {
+          // Handle both JSON string and array formats
+          $sort = is_string($input['sort']) ? json_decode($input['sort']) : (object)$input['sort'];
+          if(!empty($sort->field) && !empty($sort->type)) {
             $paginatedextraDatas = $paginatedextraDatas->orderBy($sort->field, $sort->type);
           } else {
             $paginatedextraDatas = $paginatedextraDatas->orderBy('id', 'desc');
