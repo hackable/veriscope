@@ -5,6 +5,7 @@
 # Functions:
 # - Network configuration: configure_nethermind, setup_chain_config
 # - Static nodes: refresh_static_nodes
+# - Chainspec updates: update_chainspec
 # - Monitoring: check_blockchain_sync
 
 # Source required modules
@@ -492,4 +493,150 @@ refresh_static_nodes() {
     fi
 
     echo_info "Static nodes refresh completed"
+}
+
+# ============================================================================
+# CHAINSPEC UPDATE
+# ============================================================================
+
+# Update chainspec from remote URL
+# Downloads latest chainspec, validates it, and updates if different
+# Environment variables:
+#   SHYFT_CHAINSPEC_URL - URL to download chainspec from (optional)
+# Returns: 0 on success, 1 on failure
+update_chainspec() {
+    echo_info "Updating chainspec from remote URL..."
+
+    # Load environment
+    if [ ! -f ".env" ]; then
+        echo_error ".env file not found"
+        return 1
+    fi
+
+    source .env
+
+    if [ -z "$VERISCOPE_TARGET" ]; then
+        echo_error "VERISCOPE_TARGET not set in .env. Please run setup-chain first."
+        return 1
+    fi
+
+    # Determine chainspec URL based on network if not set
+    local chainspec_url="${SHYFT_CHAINSPEC_URL}"
+    if [ -z "$chainspec_url" ]; then
+        case "$VERISCOPE_TARGET" in
+            "fed_mainnet")
+                chainspec_url="https://spec.shyft.network/ShyftMainnet-current.json"
+                ;;
+            "fed_testnet")
+                chainspec_url="https://spec.shyft.network/ShyftTestnet-current.json"
+                ;;
+            "veriscope_testnet")
+                echo_warn "No default chainspec URL for veriscope_testnet"
+                echo_info "Set SHYFT_CHAINSPEC_URL environment variable to specify URL"
+                return 1
+                ;;
+            *)
+                echo_error "Unknown network: $VERISCOPE_TARGET"
+                return 1
+                ;;
+        esac
+    fi
+
+    echo_info "Chainspec URL: $chainspec_url"
+
+    local chain_dir="chains/$VERISCOPE_TARGET"
+    local chainspec_file="$chain_dir/shyftchainspec.json"
+
+    if [ ! -f "$chainspec_file" ]; then
+        echo_error "Chainspec file not found: $chainspec_file"
+        return 1
+    fi
+
+    # Check if jq is available
+    if ! command -v jq >/dev/null 2>&1; then
+        echo_error "jq not found. Please install jq to use this feature."
+        return 1
+    fi
+
+    # Download chainspec to temporary file
+    local temp_file=$(mktemp)
+    echo_info "Downloading chainspec..."
+
+    if ! curl -f -s -o "$temp_file" "$chainspec_url"; then
+        echo_error "Failed to download chainspec from $chainspec_url"
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    # Validate file size (at least 5KB)
+    local file_size=$(wc -c < "$temp_file")
+    if [ "$file_size" -lt 5120 ]; then
+        echo_error "Downloaded file is too small ($file_size bytes). Expected at least 5KB."
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    echo_info "Downloaded $file_size bytes"
+
+    # Validate JSON
+    if ! jq . "$temp_file" > /dev/null 2>&1; then
+        echo_error "Downloaded file is not valid JSON. Rejecting update."
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    echo_info "Downloaded chainspec is valid JSON"
+
+    # Compare with existing chainspec
+    if cmp -s "$temp_file" "$chainspec_file"; then
+        echo_info "Chainspec is identical to current version. No update needed."
+        rm -f "$temp_file"
+        return 0
+    fi
+
+    echo_warn "Chainspec has changed!"
+
+    # Show diff if available
+    if command -v diff >/dev/null 2>&1; then
+        echo_info "Changes detected:"
+        diff -u "$chainspec_file" "$temp_file" | head -20 || true
+    fi
+
+    # Backup existing chainspec
+    local backup_file="${chainspec_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$chainspec_file" "$backup_file"
+    echo_info "Backed up existing chainspec to: $backup_file"
+
+    # Update chainspec
+    cp "$temp_file" "$chainspec_file"
+    chmod 0644 "$chainspec_file"
+    rm -f "$temp_file"
+
+    echo_info "Chainspec updated successfully: $chainspec_file"
+
+    # Update Nethermind container if running
+    if docker-compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
+        echo_warn "Nethermind is running. Changes will take effect after restart."
+
+        # Check if running interactively
+        if [ -t 0 ]; then
+            echo -n "Restart Nethermind now? (y/N): "
+            read -r confirm
+        else
+            # Non-interactive mode - don't auto-restart
+            confirm="n"
+        fi
+
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            echo_info "Restarting Nethermind..."
+            docker-compose -f "$COMPOSE_FILE" restart nethermind
+            echo_info "Nethermind restarted with new chainspec"
+        else
+            echo_info "Skipping restart. Run 'docker-compose restart nethermind' to apply changes."
+        fi
+    else
+        echo_info "Nethermind is not running. Changes will apply on next start."
+    fi
+
+    echo_info "Chainspec update completed"
 }
