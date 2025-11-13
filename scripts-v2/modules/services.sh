@@ -231,50 +231,62 @@ create_admin() {
 # ============================================================================
 
 install_redis() {
-    echo_info "Installing Redis server..."
+    echo_info "Installing Redis Stack Server (includes RedisBloom)..."
 
-    DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install redis-server
-    cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
-    sed 's/^supervised.*/supervised systemd/' /etc/redis/redis.conf >> /etc/redis/redis.conf.new
-    cp /etc/redis/redis.conf.new /etc/redis/redis.conf
+    # Add Redis Stack repository if not already added
+    if [ ! -f /usr/share/keyrings/redis-archive-keyring.gpg ]; then
+        curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+        apt-get update
+    fi
 
-    systemctl restart redis.service
-    echo_info "Redis installed and running"
+    # Install Redis Stack Server (includes RedisBloom, RedisJSON, RedisSearch, etc.)
+    DEBIAN_FRONTEND=noninteractive apt-get -qq -y install redis-stack-server
+
+    # Configure systemd supervision
+    if [ -f /etc/redis-stack.conf ]; then
+        cp /etc/redis-stack.conf /etc/redis-stack.conf.bak
+        sed -i 's/^supervised.*/supervised systemd/' /etc/redis-stack.conf
+    fi
+
+    systemctl enable redis-stack-server
+    systemctl restart redis-stack-server
+
+    echo_info "Redis Stack Server installed and running"
+    echo_info "Included modules: RedisBloom, RedisJSON, RedisSearch, RedisProbabilistic"
     return 0
 }
 
 install_redis_bloom() {
-    echo_info "Installing RedisBloom filter module..."
+    echo_info "Configuring RedisBloom support..."
 
-    if [ ! -f "/etc/redis/redis.conf" ]; then
-        echo_error "Redis server is not installed"
-        return 1
-    fi
-
-    cd /opt
-    rm -rf RedisBloom /tmp/buildresult
-    apt-get install -y cmake build-essential
-
-    wget -q -O /tmp/redisbloom-dist.zip "$REDISBLOOM_TARBALL"
-    unzip -qq -o -d $REDISBLOOM_DEST /tmp/redisbloom-dist.zip
-
-    cd RedisBloom/RedisBloom-2.4.5 && make | tee /tmp/buildresult
-    export MODULE=`tail -n1 /tmp/buildresult | awk '{print $2}' | sed 's/\.\.\.//'`
-    grep -v redisbloom /etc/redis/redis.conf >/tmp/redis.conf
-    echo "loadmodule $MODULE" | sudo tee --append /tmp/redis.conf
-    mv /tmp/redis.conf /etc/redis/redis.conf
-    systemctl restart redis-server
-
-    sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
-    sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/' /etc/php/8.3/fpm/php.ini
-
-    local NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf
-    if grep -q client_max_body_size $NGINX_CFG; then
-        echo_info "NGINX config already updated"
+    # Verify Redis Stack is installed with RedisBloom
+    echo_info "Verifying RedisBloom module..."
+    if redis-cli MODULE LIST 2>/dev/null | grep -q "bf"; then
+        echo_info "✓ RedisBloom module is loaded and ready"
     else
-        sed -i 's/listen 443 ssl;/listen 443 ssl;\n\tclient_max_body_size 128M;/' $NGINX_CFG
+        echo_warn "RedisBloom module not detected"
+        echo_info "Installing Redis Stack Server..."
+        install_redis
     fi
 
+    # Configure PHP for large file uploads (needed for bloom filters)
+    echo_info "Configuring PHP for bloom filter uploads..."
+    sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
+    sed -i 's/^.*upload_max_filesize.*/upload_max_filesize = 128M/' /etc/php/8.3/fpm/php.ini
+
+    # Configure NGINX for large uploads
+    local NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf
+    if [ -f "$NGINX_CFG" ]; then
+        if grep -q client_max_body_size $NGINX_CFG; then
+            echo_info "✓ NGINX config already updated"
+        else
+            echo_info "Configuring NGINX for large uploads..."
+            sed -i 's/listen 443 ssl;/listen 443 ssl;\n\tclient_max_body_size 128M;/' $NGINX_CFG
+        fi
+    fi
+
+    # Setup Laravel storage for bloom filters
     pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
 
     # Ensure bloom filter folder permissions
@@ -288,10 +300,19 @@ install_redis_bloom() {
     su $SERVICE_USER -c "composer update"
 
     systemctl restart php8.3-fpm
-    systemctl restart nginx
+    if [ -f "$NGINX_CFG" ]; then
+        systemctl restart nginx
+    fi
 
     popd >/dev/null
 
-    echo_info "RedisBloom installed successfully"
+    echo_info "✓ RedisBloom configuration completed"
+    echo_info ""
+    echo_info "Redis Stack provides built-in modules:"
+    echo_info "  - RedisBloom (bloom/cuckoo filters)"
+    echo_info "  - RedisJSON (JSON document storage)"
+    echo_info "  - RedisSearch (full-text search)"
+    echo_info "  - RedisProbabilistic (HyperLogLog, t-digest, etc.)"
+    echo_info ""
     return 0
 }
