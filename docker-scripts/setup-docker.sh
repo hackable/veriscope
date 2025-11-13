@@ -387,6 +387,7 @@ menu() {
     echo "  14) Install Redis Bloom filter"
     echo "  15) Refresh static nodes from ethstats"
     echo "  16) Regenerate webhook secret"
+    echo "  17) Update chainspec from remote URL"
     echo "  i) Full Install (all of the above)"
     echo ""
     echo "Service Management:"
@@ -482,6 +483,9 @@ menu() {
             ;;
         16)
             regenerate_webhook_secret
+            ;;
+        17)
+            update_chainspec
             ;;
         i)
             FULL_INSTALL_MODE=true
@@ -845,6 +849,9 @@ else
         regenerate-webhook-secret)
             regenerate_webhook_secret
             ;;
+        update-chainspec)
+            update_chainspec
+            ;;
         seed)
             seed_database
             ;;
@@ -948,6 +955,7 @@ else
             echo "  install-redis-bloom        - Install Redis Bloom filter"
             echo "  refresh-static-nodes       - Refresh static nodes from ethstats"
             echo "  regenerate-webhook-secret  - Regenerate webhook shared secret"
+            echo "  update-chainspec           - Update chainspec from remote URL"
             echo "  gen-app-key                - Generate Laravel app key"
             echo "  install-passport           - Install/regenerate Passport"
             echo "  gen-encrypt-secret         - Regenerate encryption secret"

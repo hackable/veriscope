@@ -152,6 +152,7 @@ This is the **primary orchestrator** that automatically loads all modules from `
 - `install-redis-bloom` - Display Redis modules info (RedisBloom included)
 - `refresh-static-nodes` - Refresh static nodes from ethstats
 - `regenerate-webhook-secret` - Regenerate webhook shared secret
+- `update-chainspec` - Update chainspec from remote URL
 - `full-install` - Full installation (all of the above)
 
 **Laravel Maintenance:**
@@ -487,6 +488,76 @@ Periodically refresh the static nodes list to get the latest network peers:
 
 **Interactive restart:**
 The script will ask if you want to restart Nethermind and clear the peer cache. Clearing the peer database forces Nethermind to rediscover peers using the updated static-nodes.json.
+
+### Updating Chainspec from Remote URL
+
+Update the chainspec file from the official Shyft Network repository:
+
+```bash
+./docker-scripts/setup-docker.sh update-chainspec
+```
+
+**Prerequisites:**
+- `VERISCOPE_TARGET` must be set in `.env`
+- `jq` must be installed (for JSON validation)
+- `curl` must be available
+
+**What it does:**
+1. **Downloads latest chainspec** from the network-specific URL
+2. **Validates the download** (checks file size ≥ 5KB and valid JSON)
+3. **Compares with existing chainspec** in `chains/$VERISCOPE_TARGET/shyftchainspec.json`
+4. **Backs up the current chainspec** if changes are detected
+5. **Updates the chainspec file** with the new version
+6. **Optionally restarts Nethermind** to apply changes
+
+**Default chainspec URLs by network:**
+- `fed_mainnet` → https://spec.shyft.network/ShyftMainnet-current.json
+- `fed_testnet` → https://spec.shyft.network/ShyftTestnet-current.json
+- `veriscope_testnet` → No default (set `SHYFT_CHAINSPEC_URL` environment variable)
+
+**Custom URL:**
+You can override the default URL by setting the `SHYFT_CHAINSPEC_URL` environment variable:
+
+```bash
+export SHYFT_CHAINSPEC_URL="https://custom.example.com/chainspec.json"
+./docker-scripts/setup-docker.sh update-chainspec
+```
+
+**Example:**
+```bash
+# Update chainspec from default URL
+./docker-scripts/setup-docker.sh update-chainspec
+
+# Output:
+# [INFO] Updating chainspec from remote URL...
+# [INFO] Chainspec URL: https://spec.shyft.network/ShyftMainnet-current.json
+# [INFO] Downloading chainspec...
+# [INFO] Downloaded 15234 bytes
+# [INFO] Downloaded chainspec is valid JSON
+# [WARN] Chainspec has changed!
+# [INFO] Changes detected:
+# --- chains/fed_mainnet/shyftchainspec.json
+# +++ /tmp/tmp.xyz123
+# [INFO] Backed up existing chainspec to: chains/fed_mainnet/shyftchainspec.json.backup.20250113_143052
+# [INFO] Chainspec updated successfully: chains/fed_mainnet/shyftchainspec.json
+# [WARN] Nethermind is running. Changes will take effect after restart.
+# Restart Nethermind now? (y/N): y
+# [INFO] Restarting Nethermind...
+# [INFO] Nethermind restarted with new chainspec
+```
+
+**When to use:**
+- After a network upgrade or hard fork
+- When instructed by Shyft Network team
+- To ensure you have the latest network parameters
+- When troubleshooting consensus issues
+
+**Safety features:**
+- Automatic backup before update (timestamped)
+- File size validation (rejects files < 5KB)
+- JSON validation (rejects malformed files)
+- Shows diff of changes before applying
+- Interactive confirmation before restart
 
 ### Regenerating Webhook Secret
 
@@ -1067,6 +1138,7 @@ Each module in `modules/` is self-contained and follows consistent patterns:
 | **Create Admin** | `create_admin` | `create-admin` | ✅ Complete |
 | **Webhook Secret** | `regenerate_webhook_secret` | `regenerate-webhook-secret` | ✅ Complete |
 | **Refresh Static Nodes** | `refresh_static_nodes` | `refresh-static-nodes` | ✅ Complete |
+| **Update Chainspec** | `scripts/chainspec-update` | `update-chainspec` | ✅ Complete |
 | **Redis Install** | `install_redis` | Built into Docker Compose | ✅ Automated |
 | **Redis Bloom** | `install_redis_bloom` | Built into redis-stack image | ✅ Automated |
 | **Service Restart** | `systemctl restart` | `docker-compose restart` | ✅ Complete |
