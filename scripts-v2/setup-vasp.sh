@@ -129,15 +129,11 @@ NETHERMIND_CFG=$NETHERMIND_DEST/config.cfg
 NETHERMIND_TARBALL="https://github.com/NethermindEth/nethermind/releases/download/1.15.0/nethermind-linux-amd64-1.15.0-2b70876-20221228.zip"
 NETHERMIND_RPC="http://localhost:8545"
 
-REDISBLOOM_DEST=/opt/RedisBloom
-REDISBLOOM_TARBALL="https://github.com/ShyftNetwork/RedisBloom/archive/refs/tags/v2.4.5.zip"
-
 NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf
 
 # Export configuration for modules
 export CERTFILE CERTKEY
 export NETHERMIND_DEST NETHERMIND_CFG NETHERMIND_TARBALL NETHERMIND_RPC
-export REDISBLOOM_DEST REDISBLOOM_TARBALL
 export NGINX_CFG
 
 echo_info "Service user: $SERVICE_USER"
