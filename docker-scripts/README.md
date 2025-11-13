@@ -2,6 +2,40 @@
 
 This directory contains utility scripts for managing Veriscope using Docker Compose. These scripts provide similar functionality to the bare-metal `scripts/` directory, but adapted for Docker deployments.
 
+## Modular Architecture
+
+**Updated**: 2025-01-13
+
+The Docker management scripts follow a **modular architecture** for improved maintainability and code organization. The monolithic `setup-docker.sh` (3,542 lines) has been refactored into focused, reusable modules following [CODE_QUALITY.md](CODE_QUALITY.md) standards.
+
+### Module Structure
+
+```
+docker-scripts/
+├── setup-docker.sh (962 lines)    # Main orchestrator script
+└── modules/                       # Modular components
+    ├── helpers.sh                # Core utilities, logging, wait functions
+    ├── validators.sh             # Validation (passwords, domains, system checks)
+    ├── docker-ops.sh             # Docker operations (build, start/stop, volumes)
+    ├── database.sh               # Database management (credentials, migrations)
+    ├── ssl.sh                    # SSL certificate management (Let's Encrypt)
+    ├── chain.sh                  # Blockchain config (Nethermind, static nodes)
+    ├── secrets.sh                # Secrets management (webhook, keypairs)
+    ├── services.sh               # Application services (Laravel, Horizon)
+    └── backup-restore.sh         # Backup and restore operations
+```
+
+### Benefits of Modular Design
+
+✅ **Organized by domain** - Each module has clear, focused responsibilities
+✅ **Better maintainability** - Easy to locate and modify specific functionality
+✅ **Consistent patterns** - Fail-fast validation, comprehensive error handling
+✅ **Reduced complexity** - 72% reduction in main script size
+✅ **Reusable components** - Functions can be used across different scripts
+✅ **Production-ready** - Follows established code quality standards
+
+All modules are automatically loaded by `setup-docker.sh` and can be sourced independently if needed.
+
 ## Prerequisites
 
 - Docker Engine 20.10 or later
@@ -84,6 +118,8 @@ This will launch an interactive menu with all available options.
 
 **Main setup and management script** with interactive menu for all common tasks.
 
+This is the **primary orchestrator** that automatically loads all modules from `modules/` directory. The script has been refactored from 3,542 lines to a clean 962-line entry point that delegates operations to specialized modules.
+
 **Usage:**
 ```bash
 # Interactive mode
@@ -92,6 +128,8 @@ This will launch an interactive menu with all available options.
 # Command line mode
 ./docker-scripts/setup-docker.sh <command>
 ```
+
+**Architecture**: Modular design with automatic module loading. All validation, Docker operations, database management, SSL handling, blockchain configuration, secrets management, and application services are handled by dedicated modules.
 
 **Available commands:**
 
@@ -969,16 +1007,41 @@ BACKUP_DIR=/mnt/backups ./docker-scripts/modules/backup-restore.sh backup-full
 
 ```
 docker-scripts/
-├── README.md              # This file
-├── setup-docker.sh        # Main setup and management script
-├── logs.sh                # Log viewer utility
-├── exec.sh                # Container exec utility
-├── manage-secrets.sh      # Secrets management
-├── backup-restore.sh      # Backup and restore utility
-└── nginx/                 # Nginx configuration files
-    ├── nginx.conf         # HTTP configuration (development)
-    └── nginx-ssl.conf     # HTTPS configuration (production, generated)
+├── README.md                   # This file
+├── CODE_QUALITY.md            # Code quality standards for scripts
+├── FEATURE_COMPARISON.md      # Feature comparison: bare-metal vs Docker
+├── setup-docker.sh            # Main orchestrator (962 lines, modular)
+├── logs.sh                    # Log viewer utility
+├── exec.sh                    # Container exec utility
+├── manage-secrets.sh          # Secrets management utility
+├── modules/                   # Modular components
+│   ├── helpers.sh            # Core utilities (colors, logging, wait)
+│   ├── validators.sh         # Validation functions
+│   ├── docker-ops.sh         # Docker operations
+│   ├── database.sh           # Database management
+│   ├── ssl.sh                # SSL certificate management
+│   ├── chain.sh              # Blockchain configuration
+│   ├── secrets.sh            # Secrets management functions
+│   ├── services.sh           # Application services
+│   └── backup-restore.sh     # Backup and restore operations
+└── nginx/                     # Nginx configuration files
+    ├── nginx.conf            # HTTP configuration (development)
+    └── nginx-ssl.conf        # HTTPS configuration (production, generated)
 ```
+
+### Module Details
+
+Each module in `modules/` is self-contained and follows consistent patterns:
+
+- **helpers.sh** (core) - Color output, portable sed, dev mode detection, secret generation, container checks, wait functions, logging
+- **validators.sh** (core) - Password validation, domain validation, environment checks, port availability, system resource checks, pre-flight checks
+- **docker-ops.sh** - Build images, start/stop/restart services, volume management, service readiness checks, status monitoring, logs
+- **database.sh** - PostgreSQL credential generation, database initialization, migrations, seeding, backup/restore delegation
+- **ssl.sh** - Let's Encrypt integration, certificate checking, renewal, auto-renewal setup
+- **chain.sh** - Nethermind configuration, chain-specific setup, static nodes refresh, blockchain sync monitoring
+- **secrets.sh** - Webhook secret sync/regeneration, Trust Anchor keypair generation, encryption secrets, env variable management
+- **services.sh** - Laravel setup, Horizon/Passport installation, admin creation, cache management, health checks
+- **backup-restore.sh** - Database, Redis, and file backups with retention management
 
 ## Comparison with Bare-Metal Scripts
 
@@ -1033,7 +1096,9 @@ For issues or questions:
 1. Check service logs: `./docker-scripts/logs.sh <service>`
 2. Run health check: `./docker-scripts/setup-docker.sh health`
 3. Review container status: `docker-compose -f docker-compose.yml ps`
-4. Consult DOCKER.md for detailed Docker documentation
+4. Consult [DOCKER.md](../DOCKER.md) for detailed Docker documentation
+5. Review [CODE_QUALITY.md](CODE_QUALITY.md) for script development standards
+6. Check module-specific functions in `docker-scripts/modules/`
 
 ## License
 
