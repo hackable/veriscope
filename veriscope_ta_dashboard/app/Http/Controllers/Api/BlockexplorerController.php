@@ -45,8 +45,9 @@ class BlockexplorerController extends Controller
 
         // sort logic
         if(!empty($input['sort'])) {
-          $sort = json_decode($input['sort']);
-          if($sort->field != '' && $sort->type != '') {
+          // Handle both JSON string and array formats
+          $sort = is_string($input['sort']) ? json_decode($input['sort']) : (object)$input['sort'];
+          if(!empty($sort->field) && !empty($sort->type)) {
             $paginatedAttestations = $paginatedAttestations->orderBy($sort->field, $sort->type);
           }
         }
@@ -107,8 +108,9 @@ class BlockexplorerController extends Controller
 
         // sort logic
         if(!empty($input['sort'])) {
-          $sort = json_decode($input['sort']);
-          if($sort->field != '' && $sort->type != '') {
+          // Handle both JSON string and array formats
+          $sort = is_string($input['sort']) ? json_decode($input['sort']) : (object)$input['sort'];
+          if(!empty($sort->field) && !empty($sort->type)) {
             $paginatedTransactions = $paginatedTransactions->orderBy($sort->field, $sort->type);
           }
         }
