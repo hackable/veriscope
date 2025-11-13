@@ -1090,8 +1090,6 @@ find /backups -type d -mtime +7 -exec rm -rf {} \;
 ### Project Documentation
 - [docker-scripts/README.md](docker-scripts/README.md) - Detailed script documentation
 - [docker-scripts/CODE_QUALITY.md](docker-scripts/CODE_QUALITY.md) - Code quality standards for Docker scripts
-- [docker-scripts/FEATURE_COMPARISON.md](docker-scripts/FEATURE_COMPARISON.md) - Feature comparison: bare-metal vs Docker setup
-- [ARCHITECTURE_MIGRATION.md](ARCHITECTURE_MIGRATION.md) - Architecture migration guide
 
 ### External Resources
 - [Docker Documentation](https://docs.docker.com/)
