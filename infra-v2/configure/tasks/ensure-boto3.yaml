@@ -1,0 +1,27 @@
+---
+- name: Install pip3 and venv
+  ansible.builtin.package:
+    name:
+      - python3-pip
+      - python3-venv
+  become: true
+
+- name: Ensure pip3 and setuptools are present
+  ansible.builtin.pip:
+    name:
+      - pip
+      - setuptools
+    executable: pip3
+    state: present
+
+- name: Install boto3
+  ansible.builtin.pip:
+    name: boto3>1.24.0,<1.25.0
+    executable: pip3
+
+- name: Install other python packages
+  ansible.builtin.pip:
+    name: "{{ item }}"
+    executable: pip3
+  with_items: "{{ pip_packages }}"
+  when: pip_packages is defined and pip_packages is truthy

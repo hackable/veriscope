@@ -1,0 +1,61 @@
+---
+- name: Install and configure Redis Stack Server (includes RedisBloom)
+  hosts: web
+  become: true
+  vars:
+    redis_stack_version: "7.2.0-v9"
+  tasks:
+
+    # Add Redis Stack repository
+    - name: Add Redis GPG key
+      ansible.builtin.shell:
+        cmd: curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+        creates: /usr/share/keyrings/redis-archive-keyring.gpg
+
+    - name: Add Redis Stack repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb {{ ansible_distribution_release }} main"
+        state: present
+        filename: redis
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    # Install Redis Stack Server with version locking
+    - name: Install Redis Stack Server {{ redis_stack_version }}
+      ansible.builtin.apt:
+        name: "redis-stack-server={{ redis_stack_version }}"
+        state: present
+      register: redis_install
+      ignore_errors: true
+
+    # Fallback to latest if specific version unavailable
+    - name: Install latest Redis Stack Server (fallback)
+      ansible.builtin.apt:
+        name: redis-stack-server
+        state: present
+      when: redis_install is failed
+
+    # Verify RedisBloom module is loaded
+    - name: Verify RedisBloom module
+      ansible.builtin.shell:
+        cmd: redis-cli MODULE LIST | grep -q "bf"
+      register: redisbloom_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Display RedisBloom status
+      ansible.builtin.debug:
+        msg: "{{ 'RedisBloom module is loaded' if redisbloom_check.rc == 0 else 'Warning: RedisBloom module not detected' }}"
+
+    # Enable and restart Redis Stack Server
+    - name: Enable redis-stack-server service
+      ansible.builtin.systemd:
+        name: redis-stack-server
+        enabled: true
+
+    - name: Restart redis-stack-server service
+      ansible.builtin.systemd:
+        name: redis-stack-server
+        state: restarted
