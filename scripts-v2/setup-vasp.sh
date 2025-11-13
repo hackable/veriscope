@@ -35,6 +35,7 @@ source "${MODULES_DIR}/secrets.sh"
 source "${MODULES_DIR}/services.sh"
 source "${MODULES_DIR}/systemd-ops.sh"
 source "${MODULES_DIR}/nginx.sh"
+source "${MODULES_DIR}/health.sh"
 
 # ============================================================================
 # SCRIPT-SPECIFIC INITIALIZATION
@@ -228,6 +229,13 @@ menu() {
 	echo "  n) Install Node.js dependencies"
 	echo "  p) Install Laravel (PHP) dependencies"
 	echo ""
+	echo "Health & Monitoring:"
+	echo "  h) Health check"
+	echo ""
+	echo "Backup & Restore:"
+	echo "  b) Backup database"
+	echo "  t) Restore database"
+	echo ""
 	echo "  x) Exit"
 	echo ""
 	echo -n "Select an option: "
@@ -332,6 +340,17 @@ menu() {
 			;;
 		p)
 			install_laravel_deps
+			;;
+		h)
+			health_check
+			;;
+		b)
+			backup_database
+			;;
+		t)
+			echo -n "Enter backup file path: "
+			read -r backup_file
+			restore_database "$backup_file"
 			;;
 		x)
 			echo_info "Exiting..."
