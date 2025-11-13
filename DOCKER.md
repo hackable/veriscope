@@ -224,9 +224,39 @@ TRUST_ANCHOR_PREFNAME="Your Organization Name"
 
 ## Docker Management Scripts
 
+### Modular Architecture
+
+The Docker management scripts follow a **modular architecture** for better maintainability and code organization. All scripts follow the standards defined in [CODE_QUALITY.md](docker-scripts/CODE_QUALITY.md).
+
+#### Module Structure
+
+```
+docker-scripts/
+├── setup-docker.sh          # Main management script (962 lines)
+└── modules/                 # Modular components
+    ├── helpers.sh          # Core utilities (colors, logging, wait functions)
+    ├── validators.sh       # Validation functions (passwords, domains, system checks)
+    ├── docker-ops.sh       # Docker operations (build, start/stop, volumes, logs)
+    ├── database.sh         # Database management (credentials, migrations, backup)
+    ├── ssl.sh              # SSL certificate management (Let's Encrypt)
+    ├── chain.sh            # Blockchain configuration (Nethermind, static nodes)
+    ├── secrets.sh          # Secrets management (webhook, keypairs, encryption)
+    ├── services.sh         # Application services (Laravel, Horizon, health checks)
+    └── backup-restore.sh   # Backup and restore operations
+```
+
+**Benefits of Modular Design**:
+- ✅ **Organized by domain** - Each module has clear, focused responsibilities
+- ✅ **Better maintainability** - Easy to locate and modify specific functionality
+- ✅ **Consistent patterns** - Fail-fast validation, comprehensive error handling
+- ✅ **Reduced complexity** - Smaller, digestible code units (72% reduction in main script)
+- ✅ **Reusable components** - Functions can be used across different scripts
+
 ### setup-docker.sh - Main Management Script
 
 **Location**: `docker-scripts/setup-docker.sh`
+
+The main entry point for all Docker management operations. Automatically loads all modules from `docker-scripts/modules/`.
 
 Interactive menu for all common operations:
 
@@ -241,32 +271,63 @@ Interactive menu for all common operations:
 **Available Commands**:
 
 #### Setup & Installation
-- `check` - Check Docker requirements
+- `check` - Check Docker requirements and environment
+- `preflight` - Run comprehensive pre-flight system checks
 - `build` - Build Docker images
 - `start` - Start all services
 - `stop` - Stop all services
 - `restart` - Restart all services
 - `status` - Show service status
+- `logs [service]` - Show docker-compose logs
+- `supervisord-logs` - Show supervisord logs (interactive)
 
-#### Chain Setup
-- `setup-chain` - Copy network artifacts to Docker volume
-- `switch-chain` - Switch between networks (veriscope_testnet/fed_testnet/fed_mainnet)
+#### Chain & Network Setup
+- `setup-chain` - Setup chain-specific configuration and artifacts
+- `create-sealer` - Generate Trust Anchor Ethereum keypair
+- `refresh-static-nodes` - Refresh static nodes from ethstats
 
 #### Database Operations
-- `db-setup` - Initialize database
-- `db-migrate` - Run Laravel migrations
-- `db-seed` - Seed database
-- `db-backup` - Backup database
-- `db-restore` - Restore database
+- `init-db` - Initialize database
+- `migrate` - Run Laravel migrations
+- `seed` - Seed database with initial data
+- `backup` - Backup database
+- `restore <file>` - Restore database from backup
 
-#### Secret Management
-- `generate-secrets` - Generate application secrets
+#### Application Setup
+- `install-php` - Install Laravel/PHP dependencies
+- `install-node` - Install Node.js dependencies
+- `install-horizon` - Install Laravel Horizon (queue dashboard)
+- `install-passport` - Install Laravel Passport (OAuth2)
+- `gen-app-key` - Generate Laravel application key
+- `create-admin` - Create admin user (interactive)
+- `clear-cache` - Clear Laravel cache
+
+#### Secret & Credential Management
+- `gen-postgres` - Generate PostgreSQL credentials
 - `regenerate-webhook` - Regenerate webhook secrets
-- `create-admin` - Create admin user
+- `regenerate-encrypt` - Regenerate encryption secrets
 
-#### SSL/TLS
-- `ssl-setup` - Obtain SSL certificate (production)
-- `ssl-renew` - Renew SSL certificate
+#### SSL/TLS (Production)
+- `obtain-ssl` - Obtain SSL certificate (Let's Encrypt)
+- `renew-ssl` - Renew SSL certificates
+- `setup-auto-renew` - Setup automatic SSL renewal
+- `check-cert` - Check certificate expiration
+- `setup-nginx` - Setup Nginx SSL configuration
+
+#### Health & Monitoring
+- `health` - Run comprehensive health check
+- `check-sync` - Check blockchain synchronization status
+
+#### Development Tools
+- `tunnel-start` - Start ngrok tunnel for remote access
+- `tunnel-stop` - Stop ngrok tunnel
+- `tunnel-url` - Get ngrok tunnel URL
+- `tunnel-logs` - View ngrok tunnel logs
+
+#### Advanced Operations
+- `reset-volumes` - Reset database and cache volumes (preserves blockchain)
+- `destroy` - Completely destroy installation (interactive, with options)
+- `full-install` - Full automated installation
 
 ### Other Utility Scripts
 
@@ -1007,10 +1068,11 @@ See `scripts/setup-vasp.sh` for the monolithic setup instructions.
 
 ## Version Information
 
-**Document Version**: 2.0 - Microservices Architecture
-**Last Updated**: 2024-11-12
+**Document Version**: 2.1 - Microservices Architecture with Modular Scripts
+**Last Updated**: 2025-01-13
 **Docker Compose Version**: 3.8+
 **Architecture**: Microservices
+**Script Architecture**: Modular (8 modules, 962-line main script)
 
 ### Software Versions
 
@@ -1026,6 +1088,13 @@ See `scripts/setup-vasp.sh` for the monolithic setup instructions.
 | Nethermind | Latest | Official image |
 | Laravel | 11.0 | - |
 | axios | 1.6.0 | Updated from 0.21.4 |
+
+### Script Modularization
+
+**Date**: 2025-01-13
+**Changes**: Refactored monolithic setup-docker.sh (3,542 lines) into 8 focused modules
+**Benefits**: 72% reduction in main script, improved maintainability, consistent error handling
+**Modules**: helpers, validators, docker-ops, database, ssl, chain, secrets, services
 
 ## Additional Resources
 
