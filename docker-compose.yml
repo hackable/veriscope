@@ -15,6 +15,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-trustanchor}
       POSTGRES_USER: ${POSTGRES_USER:-trustanchor}
+      # SECURITY WARNING: The default password 'trustanchor_dev' is WEAK and for development only!
+      # PRODUCTION DEPLOYMENTS: Run ./docker-scripts/setup-docker.sh to generate a secure password
+      # The setup script will automatically replace weak passwords with strong ones
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trustanchor_dev}
     # Port not exposed - containers access via internal network at postgres:5432
     volumes:
@@ -55,17 +58,14 @@ services:
     container_name: veriscope-app
     working_dir: /var/www/html
     volumes:
-      # Mount only writable directories as volumes
-      - app_storage:/var/www/html/storage
-      - app_bootstrap_cache:/var/www/html/bootstrap/cache
+      # Mount entire app directory as single volume
+      - app_data:/var/www/html
       # Mount .env file for runtime configuration changes
       - ./veriscope_ta_dashboard/.env:/var/www/html/.env
       # Mount ta_node .env for system checks to read in real-time
       - ./veriscope_ta_node/.env:/var/www/veriscope_ta_node/.env
       # Mount network artifacts from Docker volume (for system checks)
-      - veriscope_artifacts:/app/artifacts:ro
-      # Share public assets with nginx
-      - app_public:/var/www/html/public
+      - artifacts:/app/artifacts:ro
     # Ports not exposed - nginx proxies to app:80 internally
     # WebSocket port 6001 also not exposed - accessed via nginx at /app/websocketkey
     # Configuration read from .env file mounted from host
@@ -81,8 +81,9 @@ services:
   nethermind:
     image: nethermind/nethermind:latest
     container_name: veriscope-nethermind
-    # Ports not exposed - containers access via internal network at nethermind:8545
-    # To enable external P2P connectivity, uncomment: - "30303:30303"
+    ports:
+      - "30303:30303"  # P2P connectivity (TCP+UDP)
+    # Internal RPC access via internal network at nethermind:8545
     volumes:
       - ./chains/${VERISCOPE_TARGET:-veriscope_testnet}:/chainspec:ro
       - nethermind_data:/nethermind/db
@@ -93,7 +94,7 @@ services:
       - NETHERMIND_JSONRPCCONFIG_ENABLED=true
       - NETHERMIND_JSONRPCCONFIG_HOST=0.0.0.0
       - NETHERMIND_JSONRPCCONFIG_PORT=8545
-      - NETHERMIND_JSONRPCCONFIG_ENABLEDMODULES=[Eth,Parity,Subscribe,Trace,TxPool,Web3,Personal,Proof,Net,Health,Rpc]
+      - NETHERMIND_JSONRPCCONFIG_ENABLEDMODULES=[Eth,Parity,Subscribe,Trace,TxPool,Web3,Personal,Proof,Net,Health,Rpc,Admin]
       - NETHERMIND_INIT_CONFIG_STORERECEIPTSBYFIRSTBLOCK=0
       - NETHERMIND_JSONRPCCONFIG_TRACEREQUESTSINFOONLY=false
       # Archive mode - keeps full state to allow historical trace replay
@@ -117,7 +118,7 @@ services:
     working_dir: /app
     volumes:
       # Mount network artifacts from Docker volume (managed by setup-chain)
-      - veriscope_artifacts:/app/artifacts:ro
+      - artifacts:/app/artifacts:ro
       # Mount .env file for runtime configuration changes
       - ./veriscope_ta_node/.env:/app/.env
     # Ports not exposed - containers and nginx access via internal network
@@ -145,8 +146,8 @@ services:
       - ./docker-scripts/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - certbot_conf:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
-      # Serve compiled assets from app container
-      - app_public:/var/www/html/public:ro
+      # Serve compiled assets from app container (read-only)
+      - app_data:/var/www/html:ro
     environment:
       NGINX_HOST: ${VERISCOPE_SERVICE_HOST:-localhost}
       NGINX_ENVSUBST_TEMPLATE_SUFFIX: .conf
@@ -158,21 +159,42 @@ services:
     restart: unless-stopped
 
   # Certbot for SSL certificate management
-  # Note: Auto-renewal is disabled in development mode
+  # Auto-renewal checks every 12 hours, renews when < 30 days until expiry
   # Use 'docker-compose run --rm certbot' to manually obtain/renew certificates
-  # For production, uncomment the entrypoint below or use a production compose file
+  # Requires 'production' profile: docker-compose --profile production up -d certbot
   certbot:
     image: certbot/certbot:latest
     container_name: veriscope-certbot
     volumes:
       - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
+      - ./docker-scripts/certbot/certbot-entrypoint.sh:/entrypoint.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - veriscope
     profiles:
       - production
-    # Uncomment for auto-renewal in production:
-    # entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    # Auto-renewal enabled: checks every 12 hours and reloads nginx after renewal
+    entrypoint: "/bin/sh /entrypoint.sh"
+
+  # Ngrok tunnel for remote access (development only)
+  # Provides a public URL for local development without DNS configuration
+  # REQUIRED: Set NGROK_AUTHTOKEN in .env (get free token at https://dashboard.ngrok.com/get-started/your-authtoken)
+  # Use './docker-scripts/setup-docker.sh tunnel-start' to start
+  # Access tunnel URL with './docker-scripts/setup-docker.sh tunnel-url'
+  tunnel:
+    image: ngrok/ngrok:latest
+    container_name: veriscope-tunnel
+    command: http nginx:80 --log stdout
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - nginx
+    networks:
+      - veriscope
+    profiles:
+      - tunnel
+    restart: unless-stopped
 
 volumes:
   postgres_data:
@@ -180,10 +202,8 @@ volumes:
   nethermind_data:
   certbot_conf:
   certbot_www:
-  veriscope_artifacts:
-  app_storage:
-  app_bootstrap_cache:
-  app_public:
+  artifacts:
+  app_data:
 
 networks:
   veriscope:
