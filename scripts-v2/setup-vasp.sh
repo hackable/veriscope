@@ -4,6 +4,14 @@ set -e
 # Veriscope Setup Script v2.0 - Bare-Metal Deployment
 # Modularized architecture matching docker-scripts/setup-docker.sh
 # For systemd-based deployments on Ubuntu servers
+# Linux-only - No macOS/Darwin support
+
+# Check for Linux OS (enforce Linux-only)
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+	echo "ERROR: This script only supports Linux (Ubuntu/Debian with systemd)"
+	echo "Detected OS: $OSTYPE"
+	exit 1
+fi
 
 # ============================================================================
 # ENVIRONMENT SETUP

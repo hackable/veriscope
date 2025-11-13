@@ -28,16 +28,12 @@ echo_error() {
 # TEXT PROCESSING
 # ============================================================================
 
-# Portable sed for cross-platform compatibility
+# In-place sed for Linux
+# Note: This is Linux-only. Use sed -i for in-place file editing.
 portable_sed() {
     local sed_expression="$1"
     local file="$2"
-
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i "" "$sed_expression" "$file"
-    else
-        sed -i "$sed_expression" "$file"
-    fi
+    sed -i "$sed_expression" "$file"
 }
 
 # ============================================================================
