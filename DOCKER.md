@@ -1109,7 +1109,3 @@ For issues or questions:
 3. Check service status: `docker-compose ps`
 4. Review docker-scripts/README.md for script details
 5. Consult project documentation
-
----
-
-**Note**: For historical context on the architecture evolution, see `ARCHITECTURE_MIGRATION.md`.
