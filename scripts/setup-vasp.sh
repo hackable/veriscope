@@ -44,69 +44,156 @@ case "$VERISCOPE_TARGET" in
 		ETHSTATS_HOST="wss://fedstats.veriscope.network/api"
 		ETHSTATS_GET_ENODES="wss://fedstats.veriscope.network/primus/?_primuscb=1627594389337-0"
 		ETHSTATS_SECRET="Oogongi4"
-		CHAINSPEC_URL="${SHYFT_CHAINSPEC_URL}"
 		;;
 
 	"fed_testnet")
 		ETHSTATS_HOST="wss://stats.testnet.shyft.network/api"
-		ETHSTATS_GET_ENODES="wss://stats.testnet.shyft.network/primus/?_primuscb=1627594389337-0"
 		ETHSTATS_SECRET="Ish9phieph"
-		CHAINSPEC_URL="${SHYFT_CHAINSPEC_URL:-https://spec.shyft.network/ShyftTestnet-current.json}"
+		ETHSTATS_GET_ENODES="wss://stats.testnet.shyft.network/primus/?_primuscb=1627594389337-0"
 		;;
 
 	"fed_mainnet")
 		ETHSTATS_HOST="wss://stats.shyft.network/api"
-		ETHSTATS_GET_ENODES="wss://stats.shyft.network/primus/?_primuscb=1627594389337-0"
 		ETHSTATS_SECRET="uL4tohChia"
-		CHAINSPEC_URL="${SHYFT_CHAINSPEC_URL:-https://spec.shyft.network/ShyftMainnet-current.json}"
+		ETHSTATS_GET_ENODES="wss://stats.shyft.network/primus/?_primuscb=1627594389337-0"
 		;;
 
 	*)
-		echo "VERISCOPE_TARGET must be set to veriscope_testnet, fed_testnet, or fed_mainnet"
+		echo "Please set VERISCOPE_TARGET to veriscope_testnet, fed_testnet, or fed_mainnet"
 		exit 1
 		;;
 esac
 
+# No harm copying this file over and over. In fact, it might be necessary
 # to copy this file in case of changes in contracts. However, the trust anchor PK,
-# contract, and account credentials in the target network will all need to be preserved.
-NETHERMIND_TARBALL="https://github.com/NethermindEth/nethermind/releases/download/1.15.0/nethermind-1.15.0-e00406f5-linux-x64.zip"
-NETHERMIND_DEST="/opt/nm"
-NETHERMIND_CFG="/opt/nm/config.cfg"
-ENVDEST=$INSTALL_ROOT/veriscope_ta_dashboard/.env
-APACHECONFDIR=/etc/nginx/sites-enabled
-APACHE2CONF=$APACHECONFDIR/laravel.conf
+# account, prefname etc. should be preserved as it is supplied by the user.
+# This should happen after nethermind install step during node app install step
+cp -n chains/$VERISCOPE_TARGET/ta-node-env veriscope_ta_node/.env
 
-NC='\033[0m'
-GREEN='\033[0;32m'
 
+if [ -z "$(logname)" ]
+then
+SERVICE_USER=serviceuser
+else
+SERVICE_USER=$(logname)
+fi
+
+
+CERTFILE=/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem
+CERTKEY=/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem
+SHARED_SECRET=
+
+NETHERMIND_DEST=/opt/nm
+NETHERMIND_CFG=$NETHERMIND_DEST/config.cfg
+NETHERMIND_TARBALL="https://github.com/NethermindEth/nethermind/releases/download/1.15.0/nethermind-linux-amd64-1.15.0-2b70876-20221228.zip"
+NETHERMIND_RPC="http://localhost:8545"
+
+REDISBLOOM_DEST=/opt/RedisBloom
+REDISBLOOM_TARBALL="https://github.com/ShyftNetwork/RedisBloom/archive/refs/tags/v2.4.5.zip"
+
+
+NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf
+
+echo "+ Service user will be $SERVICE_USER"
+
+# this function sets some globals to have a new ethereum PK, ACCT
+# should be run only once, but we will ask this be done by the user, i.e. generate an ETH public/private key pair
+# and enter the information/provide it to ansible via variable values
 function create_sealer_pk {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
+	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
+
 	su $SERVICE_USER -c "npm install web3 dotenv"
 	local OUTPUT=$(node -e 'require("./create-account").trustAnchorCreateAccount()')
 	SEALERACCT=$(echo $OUTPUT | jq -r '.address')
-	SEALERPK=$(echo $OUTPUT | jq -r '.privateKey')
+	SEALERPK=$(echo $OUTPUT | jq -r '.privateKey');
+	[[ $SEALERPK =~ 0x(.+) ]]
+	SEALERPK=${BASH_REMATCH[1]}
+
+	ENVDEST=.env
+	sed -i "s#TRUST_ANCHOR_ACCOUNT=.*#TRUST_ANCHOR_ACCOUNT=$SEALERACCT#g" $ENVDEST
+	sed -i "s#TRUST_ANCHOR_PK=.*#TRUST_ANCHOR_PK=$SEALERPK#g" $ENVDEST
+	sed -i "s#TRUST_ANCHOR_PREFNAME=.*#TRUST_ANCHOR_PREFNAME=\"$VERISCOPE_COMMON_NAME\"#g" $ENVDEST
+	sed -i "s#WEBHOOK_CLIENT_SECRET=.*#WEBHOOK_CLIENT_SECRET=$SHARED_SECRET#g" $ENVDEST
+
+	popd >/dev/null
 }
 
 function install_redis {
-	if systemctl is-active --quiet redis; then
-		echo "Redis server is already installed."
-	else
-		systemctl start redis
-	fi
+	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install redis-server
+	cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
+	sed 's/^supervised.*/supervised systemd/' /etc/redis/redis.conf >> /etc/redis/redis.conf.new
+	cp /etc/redis/redis.conf.new /etc/redis/redis.conf
+
+	systemctl restart redis.service
 }
 
 function install_redis_bloom {
-	if systemctl is-active --quiet redis; then
-		echo "Redis server is already installed."
+
+	if [ -f "/etc/redis/redis.conf" ]; then
+	 cd /opt
+	 rm -rf RedisBloom /tmp/buildresult
+	 apt-get install -y cmake build-essential
+
+	 wget -q -O /tmp/redisbloom-dist.zip "$REDISBLOOM_TARBALL"
+	 unzip -qq -o -d $REDISBLOOM_DEST /tmp/redisbloom-dist.zip
+
+	 cd RedisBloom/RedisBloom-2.4.5 && make | tee /tmp/buildresult
+	 export MODULE=`tail -n1 /tmp/buildresult | awk '{print $2}' | sed 's/\.\.\.//'`
+	 grep -v redisbloom /etc/redis/redis.conf >/tmp/redis.conf
+	 echo "loadmodule $MODULE" | sudo tee --append /tmp/redis.conf
+	 mv /tmp/redis.conf /etc/redis/redis.conf
+	 systemctl restart redis-server
+
+	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
+	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/8.3/fpm/php.ini
+	 if grep -q client_max_body_size $NGINX_CFG; then
+    echo "NGINX config already has been already updated"
+	 else
+  	sed -i 's/listen 443 ssl;/listen 443 ssl;\n	client_max_body_size 128M;/' $NGINX_CFG
+	 fi
+
+	 pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+	 
+	 # double confirm bloom filter folder permission
+	 directory="storage/app/files"
+	 if [ ! -d "$directory" ]; then
+	 mkdir -p "$directory"
+	 fi
+
+	 chmod 775 "$directory"
+ 	 chown -R $SERVICE_USER .
+	 su $SERVICE_USER -c "composer update"
+
+	 systemctl restart php8.3-fpm
+ 	 systemctl restart nginx
+
 	else
-		systemctl start redis
+		echo "Redis server is not installed"
 	fi
-	# Note that Redis bloom filter is available in redis stack that should have been installed already
-	echo "To check if bloom filter is available, run: redis-cli MODULE LIST"
+
+}
+
+function create_postgres_trustanchor_db {
+	if su postgres -c "psql -t -c '\du'" | cut -d \| -f 1 | grep -qw trustanchor; then
+		echo "Postgres user trustanchor already exists."
+	else
+		PGPASS=$(pwgen -B 20 1)
+		PGDATABASE=trustanchor
+		PGUSER=trustanchor
+
+		sudo -u postgres psql -c "create user $PGUSER  with createdb login password '$PGPASS'" || { echo "Postgres user creation failed"; exit 1; }
+		sudo -u postgres psql -c "create database $PGDATABASE owner $PGUSER" || { echo "Postgres database creation failed"; exit 1; }
+
+		ENVDEST=$INSTALL_ROOT/veriscope_ta_dashboard/.env
+		sed -i "s#DB_CONNECTION=.*#DB_CONNECTION=pgsql#g" $ENVDEST
+		sed -i "s#DB_HOST=.*#DB_HOST=localhost#g" $ENVDEST
+		sed -i "s#DB_PORT=.*#DB_PORT=5432#g" $ENVDEST
+		sed -i "s#DB_DATABASE=.*#DB_DATABASE=$PGDATABASE#g" $ENVDEST
+		sed -i "s#DB_USERNAME=.*#DB_USERNAME=$PGUSER#g" $ENVDEST
+		sed -i "s#DB_PASSWORD=.*#DB_PASSWORD=$PGPASS#g" $ENVDEST
+
+		echo "  New postgres user $PGUSER / password $PGPASS / database $PGDATABASE "
+	fi
 }
 
 function refresh_dependencies() {
@@ -143,25 +230,24 @@ function refresh_dependencies() {
 		rm composer-setup.php
 		exit 1
 	fi
-	php composer-setup.php --quiet
+	php composer-setup.php --install-dir="/usr/local/bin/" --filename=composer --2
 	rm composer-setup.php
-	mv composer.phar /usr/local/bin/composer
-}
 
-function create_postgres_trustanchor_db {
-	PG_PASSWORD=$(pwgen -B 20 1)
-	# note that when we set it here, the container we're in doesnt have a .bashrc that sets it so we need to set it explicitly for createuser
-	sudo -u postgres psql -U postgres -c "CREATE USER trustanchor WITH CREATEDB PASSWORD '$PG_PASSWORD';"
-	sudo -u postgres createdb trustanchor -O trustanchor
-	sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=$PG_PASSWORD/g" $ENVDEST
+  if [ $SERVICE_USER == "serviceuser" ]; then
+   chown -R $SERVICE_USER /opt/veriscope/
+  fi
+
+
+	cp scripts/ntpdate /etc/cron.daily/
+	cp scripts/journald /etc/cron.daily/
+	chmod +x /etc/cron.daily/journald
+	chmod +x /etc/cron.daily/ntpdate
+
+	/etc/cron.daily/ntpdate
+	return 0
 }
 
 function install_or_update_nethermind() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
 	echo "Installing Nethermind to $NETHERMIND_DEST - target $VERISCOPE_TARGET chain - configuration will be in $NETHERMIND_CFG"
 
 	wget -q -O /tmp/nethermind-dist.zip "$NETHERMIND_TARBALL"
@@ -224,150 +310,236 @@ function install_or_update_nethermind() {
 			"Pruning": {
                                 "Enabled": false
                         },
-			"Metrics": {
-				"Enabled": false
-			},
 			"EthStats": {
 				"Enabled": true,
-				"Name": "'"$VERISCOPE_COMMON_NAME"'",
-				"Server": "'"$ETHSTATS_HOST"'",
-				"Secret": "'"$ETHSTATS_SECRET"'",
-				"Contact": "'"$SEALERACCT"'"
+				"Contact": "not-yet",
+				"Secret": "'$ETHSTATS_SECRET'",
+				"Name": "'$VERISCOPE_SERVICE_HOST'",
+				"Server": "'$ETHSTATS_HOST'"
 			}
-		}' | jq > $NETHERMIND_CFG
-		sed -i "s/SEALER_PRIVATE_KEY=.*/SEALER_PRIVATE_KEY=$SEALERPK/g" $ENVDEST
-		chown -R $SERVICE_USER $NETHERMIND_DEST
+		}' >  $NETHERMIND_CFG
 	fi
+
+	      echo "Restarting nethermind...."
+        if [ $SERVICE_USER == "serviceuser" ]; then
+         chown -R $SERVICE_USER /opt/nm/
+        else
+         chown -R $SERVICE_USER:$SERVICE_USER /opt/nm/
+        fi
+
+        systemctl restart nethermind
 }
 
+# explore automatic SSL cert renewal
 function setup_or_renew_ssl {
 	systemctl stop nginx
-	certbot certonly --standalone -n -m hostmaster@shyft.network --agree-tos -d $VERISCOPE_SERVICE_HOST
-	systemctl start nginx
-}
-
-function setup_nginx {
-	APACHECONFDIR=/etc/nginx/sites-enabled
-	APACHE2CONF=$APACHECONFDIR/laravel.conf
-	if [ ! -f "$APACHE2CONF" ]; then
-		cat <<EOF > $APACHE2CONF
-server {
-	listen 80;
-	listen [::]:80;
-	server_name $VERISCOPE_SERVICE_HOST;
-	return 301 https://\$host\$request_uri;
-}
-
-server {
-	listen 443 ssl http2;
-	listen [::]:443 ssl http2;
-	server_name $VERISCOPE_SERVICE_HOST;
-	root $INSTALL_ROOT/veriscope_ta_dashboard/public/;
-	index index.php index.html index.htm index.nginx-debian.html;
-	ssl_certificate /etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem;
-	ssl_certificate_key /etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem;
-	location / {
-		try_files \$uri \$uri/ /index.php?\$query_string;
-	}
-	location /arena {
-		proxy_http_version 1.1;
-		proxy_set_header Host \$host;
-		proxy_redirect off;
-		proxy_pass http://localhost:8080/;
-	}
-	location ~ \.php$ {
-		include snippets/fastcgi-php.conf;
-		fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-	}
-	location ~ /\.ht {
-		deny all;
-	}
-	location /app/websocketkey {
-		proxy_http_version 1.1;
-		proxy_set_header Upgrade \$http_upgrade;
-		proxy_set_header Connection "upgrade";
-		proxy_read_timeout 86400;
-		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-		proxy_set_header Host \$host;
-		proxy_redirect off;
-		proxy_pass http://localhost:6001;
-	}
-}
-EOF
-		sed -i 's/client_max_body_size.*/client_max_body_size 128M;/' /etc/nginx/nginx.conf
-		systemctl restart nginx
+	certbot certonly -n --agree-tos   --register-unsafely-without-email --standalone --preferred-challenges http   -d $VERISCOPE_SERVICE_HOST || { echo "Certbot failed to get a certificate"; exit 1; }
+	if [ -f $CERTFILE ]; then
+		echo "Found $CERTFILE";
+	else
+		echo "Couldn't find certificate file $CERTFILE"
 	fi
+	systemctl restart nginx
 }
 
+# after SSL step. ONLY ONCE. If re-run same info should be set
+function setup_nginx {
+	sed -i "s/user .*;/user $SERVICE_USER www-data;/g" /etc/nginx/nginx.conf
+
+	echo '
+	server {
+		listen 80;
+		server_name '$VERISCOPE_SERVICE_HOST';
+		rewrite ^/(.*)$ https://'$VERISCOPE_SERVICE_HOST'$1 permanent;
+	}
+
+	server {
+		listen 443 ssl;
+		server_name '$VERISCOPE_SERVICE_HOST';
+		root '$INSTALL_ROOT'/veriscope_ta_dashboard/public;
+
+		ssl_certificate     '$CERTFILE';
+		ssl_certificate_key '$CERTKEY';
+		ssl_protocols       TLSv1 TLSv1.1 TLSv1.2;
+		ssl_ciphers         HIGH:!aNULL:!MD5;
+
+		add_header X-Frame-Options "SAMEORIGIN";
+		add_header X-XSS-Protection "1; mode=block";
+		add_header X-Content-Type-Options "nosniff";
+
+		index index.html index.htm index.php;
+
+		charset utf-8;
+
+		location /arena/ {
+			proxy_pass  http://127.0.0.1:8080/arena/;
+			proxy_set_header Host $host;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		}
+
+		location / {
+			try_files $uri $uri/ /index.php?$query_string;
+		}
+
+		location = /favicon.ico { access_log off; log_not_found off; }
+		location = /robots.txt  { access_log off; log_not_found off; }
+
+		error_page 404 /index.php;
+
+		location ~ \.php$ {
+			fastcgi_split_path_info ^(.+\.php)(/.+)$;
+			fastcgi_pass unix:/var/run/php/php-fpm.sock;
+			fastcgi_index index.php;
+			fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+			include fastcgi_params;
+		}
+
+		location ~ /\.(?!well-known).* {
+			deny all;
+		}
+
+		location /app/websocketkey {
+			proxy_pass             http://127.0.0.1:6001;
+			proxy_set_header Host  $host;
+			proxy_set_header X-Real-IP  $remote_addr;
+			proxy_set_header X-VerifiedViaNginx yes;
+			proxy_read_timeout                  60;
+			proxy_connect_timeout               60;
+			proxy_redirect                      off;
+
+			# Allow the use of websockets
+			proxy_http_version 1.1;
+			proxy_set_header Upgrade $http_upgrade;
+			proxy_set_header Connection 'upgrade';
+			proxy_set_header Host $host;
+			proxy_cache_bypass $http_upgrade;
+		}
+	} ' >$NGINX_CFG
+
+	systemctl enable nginx
+	systemctl restart php8.3-fpm
+	systemctl restart nginx
+}
+
+# should be able to run this multiple times.
+# first time is install.
+# second time onwards it is considered an update operation
+# Should copy the source (ensure .env is not overwritten), npm install,
 function install_or_update_nodejs {
+	echo "Updating node.js application & restarting"
+	chown -R $SERVICE_USER $INSTALL_ROOT/veriscope_ta_node
+
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
-	cp chains/$VERISCOPE_TARGET/ta-node-env .env
-	npm install
+	su $SERVICE_USER -c "npm install"
+	popd >/dev/null
+
+	pushd >/dev/null $INSTALL_ROOT/
+	# ONLY ONCE. Not needed for an update
+	echo "Doing chain-specific configuration"
+	cp -r chains/$VERISCOPE_TARGET/artifacts $INSTALL_ROOT/veriscope_ta_node/
+
+	# no need to re-copy the service files during update operation
 	if ! test -s "/etc/systemd/system/ta-node-1.service"; then
-		echo "Installing systemd unit for ta-node"
-		cp $INSTALL_ROOT/scripts/ta-node-1.service /etc/systemd/system/ta-node-1.service
+		echo "Activating and restarting node.js services: ta-node-1"
+		cp scripts/ta-node-1.service /etc/systemd/system/
+		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta-node-1.service
 		systemctl daemon-reload
 		systemctl enable ta-node-1
 	fi
-	systemctl restart ta-node-1 || true
-	popd >/dev/null
+
+	systemctl restart ta-node-1
+
+	# this also does a restart of ta-node-1
+	regenerate_webhook_secret;
 }
 
+# be careful not to overwrite the .env file when updating
 function install_or_update_laravel {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
+	echo "Deploying PHP application "
+
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+	chown -R $SERVICE_USER .
+
+	ENVDEST=.env
+	sed -i "s#APP_URL=.*#APP_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
+	sed -i "s#SHYFT_ONBOARDING_URL=.*#SHYFT_ONBOARDING_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
+	regenerate_webhook_secret;
+
+	echo "Setting up node.js elements of PHP application..."
 	su $SERVICE_USER -c "npm install"
 	su $SERVICE_USER -c "npm run development"
-	chown -R $SERVICE_USER .
+
+	echo "Setting up PHP and deploying..."
 	su $SERVICE_USER -c "composer install"
-	su $SERVICE_USER -c "php artisan migrate:fresh"
-	su $SERVICE_USER -c "php artisan db:seed --class=RolesTableSeeder"
-	su $SERVICE_USER -c "php artisan db:seed --class=AdminUserSeeder"
+	su $SERVICE_USER -c "php artisan migrate"
+
+	# ONLY ONCE. SHOULD not run on update
+	su $SERVICE_USER -c "php artisan db:seed"
 	su $SERVICE_USER -c "php artisan key:generate"
-	su $SERVICE_USER -c "php artisan --force passport:install"
-	su $SERVICE_USER -c "php artisan encrypt:generate --force"
-	su $SERVICE_USER -c "ln -s $INSTALL_ROOT/veriscope_ta_dashboard/storage/oauth-public.key $INSTALL_ROOT/veriscope_ta_node/oauth-public.key"
-	chown -R www-data:www-data $INSTALL_ROOT/veriscope_ta_dashboard/storage
-	chown -R www-data:www-data $INSTALL_ROOT/veriscope_ta_dashboard/bootstrap/cache
-	chmod -R 775 $INSTALL_ROOT/veriscope_ta_dashboard/storage
+	su $SERVICE_USER -c "php artisan passport:install"
+	su $SERVICE_USER -c "php artisan encrypt:generate"
+	su $SERVICE_USER -c "php artisan passportenv:link"
+	# ONLY ONCE. SHOULD not run on update
+
+	chgrp -R www-data ./
+	chmod -R 0770 ./storage
+	chmod -R g+s ./
+
 	popd >/dev/null
+
 	if ! test -s "/etc/systemd/system/ta.service"; then
-		echo "Installing systemd unit for ta.service"
-		cp scripts/ta.service /etc/systemd/system/ta.service
+		echo "Deploying systemd service definitions: ta ta-wss ta-schedule"
+		cp scripts/ta-schedule.service /etc/systemd/system/
+		cp scripts/ta-wss.service /etc/systemd/system/
+		cp scripts/ta.service /etc/systemd/system/
+
+		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta-schedule.service
+		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta-wss.service
 		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/ta.service
-		systemctl daemon-reload
-		systemctl enable ta.service
 	fi
-	systemctl restart ta || true
-	systemctl restart php8.3-fpm || true
+
+
+	systemctl daemon-reload
+
+	echo "Restarting PHP-based services..."
+	systemctl enable ta-schedule
+	systemctl enable ta-wss
+	systemctl enable ta
+	systemctl restart ta-schedule
+	systemctl restart ta-wss
+	systemctl restart ta
 }
 
 function restart_all_services() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
-	systemctl restart ta || true
-	systemctl restart ta-node-1 || true
-	systemctl restart horizon || true
-	systemctl restart nethermind || true
-	systemctl restart php8.3-fpm || true
-	systemctl restart nginx || true
+	echo "Restarting all services..."
+	systemctl restart nethermind
+	systemctl restart ta
+	systemctl restart ta-wss
+	systemctl restart ta-schedule
+	systemctl restart nginx
+	systemctl restart postgresql
+	systemctl restart redis.service
+	systemctl restart ta-node-1
+	systemctl restart horizon
+	echo "All services restarted"
 }
 
+# idempotent func
 function refresh_static_nodes() {
 	echo "Refreshing static nodes from ethstats..."
+
 	DEST=/opt/nm/static-nodes.json
 	echo '[' >$DEST
-	wscat -x '{"emit":["ready"]}' --connect $ETHSTATS_GET_ENODES | grep enode | jq '.emit[1].nodes' | grep -oP '"enode://.*?"' | sed '$!s/$/,/' | tee -a $DEST
+	wscat -x '{"emit":["ready"]}' --connect $ETHSTATS_GET_ENODES | grep enode | jq '.emit[1].nodes' | grep  -oP '"enode://.*?"'   | sed '$!s/$/,/' | tee -a $DEST
 	echo ']' >>$DEST
+	cat $DEST
+
+	echo
+	echo "Cycling nethermind to obtain enode..."
 
 	ENODE=`curl -s -X POST -d '{"jsonrpc":"2.0","id":1, "method":"admin_nodeInfo", "params":[]}' http://localhost:8545/ | jq '.result.enode'`
+	echo "This enode: $ENODE . Updating ethstats setting..."
 	jq ".EthStats.Contact = $ENODE" $NETHERMIND_CFG | sponge $NETHERMIND_CFG
 
 	rm /opt/nm/nethermind_db/vasp/discoveryNodes/SimpleFileDb.db
@@ -375,161 +547,57 @@ function refresh_static_nodes() {
 	systemctl restart nethermind
 }
 
-function update_chainspec() {
-	echo "Updating chainspec from remote URL..."
-
-	# Check if jq is available
-	if ! command -v jq >/dev/null 2>&1; then
-		echo "ERROR: jq not found. Please install jq to use this feature."
-		return 1
-	fi
-
-	# Check if CHAINSPEC_URL is set
-	if [ -z "$CHAINSPEC_URL" ]; then
-		echo "ERROR: CHAINSPEC_URL not set for network $VERISCOPE_TARGET"
-		echo "Set SHYFT_CHAINSPEC_URL environment variable to specify URL"
-		return 1
-	fi
-
-	echo "Chainspec URL: $CHAINSPEC_URL"
-
-	local chainspec_file="$NETHERMIND_DEST/shyftchainspec.json"
-
-	if [ ! -f "$chainspec_file" ]; then
-		echo "ERROR: Chainspec file not found: $chainspec_file"
-		return 1
-	fi
-
-	# Download chainspec to temporary file
-	local temp_file=$(mktemp)
-	echo "Downloading chainspec..."
-
-	if ! curl -f -s -o "$temp_file" "$CHAINSPEC_URL"; then
-		echo "ERROR: Failed to download chainspec from $CHAINSPEC_URL"
-		rm -f "$temp_file"
-		return 1
-	fi
-
-	# Validate file size (at least 5KB)
-	local file_size=$(wc -c < "$temp_file")
-	if [ "$file_size" -lt 5120 ]; then
-		echo "ERROR: Downloaded file is too small ($file_size bytes). Expected at least 5KB."
-		rm -f "$temp_file"
-		return 1
-	fi
-
-	echo "Downloaded $file_size bytes"
-
-	# Validate JSON
-	if ! jq . "$temp_file" > /dev/null 2>&1; then
-		echo "ERROR: Downloaded file is not valid JSON. Rejecting update."
-		rm -f "$temp_file"
-		return 1
-	fi
-
-	echo "Downloaded chainspec is valid JSON"
-
-	# Compare with existing chainspec
-	if cmp -s "$temp_file" "$chainspec_file"; then
-		echo "Chainspec is identical to current version. No update needed."
-		rm -f "$temp_file"
-		return 0
-	fi
-
-	echo "WARNING: Chainspec has changed!"
-
-	# Show diff if available
-	if command -v diff >/dev/null 2>&1; then
-		echo "Changes detected:"
-		diff -u "$chainspec_file" "$temp_file" | head -20 || true
-	fi
-
-	# Backup existing chainspec
-	local backup_file="${chainspec_file}.backup.$(date +%Y%m%d_%H%M%S)"
-	cp "$chainspec_file" "$backup_file"
-	echo "Backed up existing chainspec to: $backup_file"
-
-	# Update chainspec
-	cp "$temp_file" "$chainspec_file"
-	chmod 0644 "$chainspec_file"
-	rm -f "$temp_file"
-
-	echo "Chainspec updated successfully: $chainspec_file"
-
-	# Restart Nethermind if running
-	if systemctl is-active --quiet nethermind; then
-		echo "WARNING: Nethermind is running. Changes will take effect after restart."
-		read -p "Restart Nethermind now? (y/N): " -n 1 -r confirm
-		echo
-		if [[ "$confirm" =~ ^[Yy]$ ]]; then
-			echo "Restarting Nethermind..."
-			systemctl restart nethermind
-			echo "Nethermind restarted with new chainspec"
-		else
-			echo "Skipping restart. Run 'systemctl restart nethermind' to apply changes."
-		fi
-	else
-		echo "Nethermind is not running. Changes will apply on next start."
-	fi
-
-	echo "Chainspec update completed"
-}
-
 function daemon_status() {
-	systemctl status nethermind ta-node-1 ta horizon
+	systemctl status nethermind ta ta-wss ta-schedule ta-node-1 nginx postgresql redis.service horizon | less
 }
 
+# ONLY ONCE. after lavarel install step
 function create_admin() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
-	su $SERVICE_USER -c "php artisan admin:create"
-}
-
-function install_addressproof() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
-	su $SERVICE_USER -c "php artisan addressproof:install"
-}
-
-function install_passport_client_env(){
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
-	su $SERVICE_USER -c "php artisan passport:client:env"
-}
-
-function install_horizon() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
-	su $SERVICE_USER -c "composer update laravel/horizon"
-	chown -R $SERVICE_USER .
-	su $SERVICE_USER -c "php artisan horizon:install"
-	chown -R $SERVICE_USER .
-	su $SERVICE_USER -c "php artisan migrate"
-	if ! test -s "/etc/systemd/system/horizon.service"; then
-		echo "Installing systemd unit for horizon"
-		cp scripts/horizon.service /etc/systemd/system/horizon.service
-		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/horizon.service
-		systemctl daemon-reload
-		systemctl enable horizon
-	fi
-	systemctl restart horizon || true
+	su $SERVICE_USER -c "php artisan createuser:admin"
 	popd >/dev/null
 }
 
+function install_addressproof() {
+	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+	su $SERVICE_USER -c "php artisan download:addressproof"
+	popd >/dev/null
+}
+
+function install_passport_client_env(){
+	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+	su $SERVICE_USER -c "php artisan passportenv:link"
+	popd >/dev/null
+}
+
+function install_horizon() {
+	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
+	su $SERVICE_USER -c "composer update"
+	# ONLY ONCE.
+	su $SERVICE_USER -c "php artisan horizon:install"
+	# ONLY ONCE.
+	su $SERVICE_USER -c "php artisan migrate"
+	popd >/dev/null
+
+	pushd >/dev/null $INSTALL_ROOT/
+	if ! test -s "/etc/systemd/system/horizon.service"; then
+		echo "Deploying systemd service definitions: horizon"
+		cp scripts/horizon.service /etc/systemd/system/
+		sed -i "s/User=.*/User=$SERVICE_USER/g" /etc/systemd/system/horizon.service
+	fi
+
+	popd >/dev/null
+
+	echo "Restarting horizon service..."
+	systemctl daemon-reload
+	systemctl enable horizon
+	systemctl restart horizon
+}
+
+# on-demand only to reset if compromised. Safe to run multiple times
 function regenerate_webhook_secret() {
+
+	echo "Generating new shared secret..."
 	SHARED_SECRET=$(pwgen -B 20 1)
 
 	ENVDEST=$INSTALL_ROOT/veriscope_ta_dashboard/.env
@@ -540,64 +608,59 @@ function regenerate_webhook_secret() {
 
 	systemctl restart ta-node-1 || true
 	systemctl restart ta || true
+
+	echo "Shared secret saved"
 }
 
 function regenerate_passport_secret() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
+	echo "Generating new passport secret..."
+
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
 	su $SERVICE_USER -c "php artisan --force passport:install"
 	popd >/dev/null
+
+	echo "Passport secret saved"
 }
 
 function regenerate_encrypt_secret() {
-	if [ -z "$1" ]; then
-		SERVICE_USER="$(logname)"
-	else
-		SERVICE_USER="$1"
-	fi
+
+	echo "Generating new encrypt secret..."
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
-	su $SERVICE_USER -c "php artisan encrypt:generate --force"
+	su $SERVICE_USER -c "php artisan encrypt:generate"
 	popd >/dev/null
+
+	echo "encrypt secret saved"
 }
 
-function menu() {
-	echo ""
-	echo "================================"
-	echo "Veriscope Setup (Bare-Metal)"
-	echo "================================"
-	echo ""
-	echo " 1) Refresh dependencies"
-	echo " 2) Install or update Nethermind"
-	echo " 3) Create PostgreSQL database"
-	echo " 4) Setup or renew SSL certificate"
-	echo " 5) Setup Nginx"
-	echo " 6) Install or update Node.js service"
-	echo " 7) Install or update Laravel"
-	echo " 8) Refresh static nodes from ethstats"
-	echo " 9) Create admin user"
-	echo "10) Regenerate webhook secret"
-	echo "11) Regenerate Passport secret"
-	echo "12) Regenerate encryption secret"
-	echo "13) Install Redis"
-	echo "14) Install Passport client env"
-	echo "15) Install Horizon"
-	echo "16) Install address proofs"
-	echo "17) Install Redis Bloom filter"
-	echo "18) Update chainspec from remote URL"
-	echo ""
-	echo " i) Full install (all of the above)"
-	echo " p) Show daemon status"
-	echo " w) Restart all services"
-	echo " q) Quit"
-	echo " r) Reboot"
-	echo ""
-	echo -n "Select an option: "
-	read -r choice
 
+function menu() {
+	echo
+	echo
+	echo -ne "1) Refresh dependencies
+2) Install/update nethermind
+3) Set up new postgres user
+4) Obtain/renew SSL certificate
+5) Install/update NGINX
+6) Install/update node.js web service
+7) Install/update PHP web service
+8) Update static node list for nethermind
+9) Create admin user
+10) Regenerate webhook secret
+11) Regenerate oauth secret (passport)
+12) Regenerate encrypt secret (EloquentEncryption)
+13) Install Redis server
+14) Install Passport Client Environment Variables
+15) Install Horizon
+16) Install Address Proofs
+17) Install Redis Bloom Filter module
+i) Install Everything
+p) show daemon status
+w) restart all services
+r) reboot
+q) quit
+Choose what to do: "
+	read choice
+	echo
 	case $choice in
 		1) refresh_dependencies ; menu ;;
 		2) install_or_update_nethermind ; menu ;;
@@ -616,7 +679,6 @@ function menu() {
 		15) install_horizon; menu ;;
 		16) install_addressproof; menu ;;
 		17) install_redis_bloom; menu ;;
-		18) update_chainspec; menu ;;
 		"i") refresh_dependencies ; install_or_update_nethermind ; create_postgres_trustanchor_db  ; install_redis ; setup_or_renew_ssl ; setup_nginx ; install_or_update_nodejs ; install_or_update_laravel ; install_horizon ; install_redis_bloom ; refresh_static_nodes; menu ;;
 		"p") daemon_status ; menu ;;
 		"w") restart_all_services ; menu ;;
