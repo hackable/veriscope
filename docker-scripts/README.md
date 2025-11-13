@@ -17,7 +17,7 @@ This directory contains utility scripts for managing Veriscope using Docker Comp
 - Host filesystem remains **completely clean** - no modifications by containers
 - Configuration files (`.env`) are read via env_file directive
 - Network-specific artifacts are stored in **Docker volume** (not visible on host)
-- All writable data persisted in named volumes (postgres_data, redis_data, nethermind_data, veriscope_artifacts, app_storage, app_bootstrap_cache)
+- All writable data persisted in named volumes (postgres_data, redis_data, nethermind_data, artifacts, app_data)
 
 **Benefits:**
 - Zero host filesystem pollution
@@ -254,10 +254,10 @@ This will launch an interactive menu with all available options.
 **Usage:**
 ```bash
 # Interactive mode
-./docker-scripts/backup-restore.sh
+./docker-scripts/modules/backup-restore.sh
 
 # Command line mode
-./docker-scripts/backup-restore.sh <command>
+./docker-scripts/modules/backup-restore.sh <command>
 ```
 
 **Available commands:**
@@ -272,22 +272,22 @@ This will launch an interactive menu with all available options.
 **Examples:**
 ```bash
 # Interactive menu
-./docker-scripts/backup-restore.sh
+./docker-scripts/modules/backup-restore.sh
 
 # Full backup
-./docker-scripts/backup-restore.sh backup-full
+./docker-scripts/modules/backup-restore.sh backup-full
 
 # Backup database only
-./docker-scripts/backup-restore.sh backup-db
+./docker-scripts/modules/backup-restore.sh backup-db
 
 # List backups
-./docker-scripts/backup-restore.sh list
+./docker-scripts/modules/backup-restore.sh list
 
 # Restore database
-./docker-scripts/backup-restore.sh restore-db ./backups/postgres-20231210-120000.sql.gz
+./docker-scripts/modules/backup-restore.sh restore-db ./backups/postgres-20231210-120000.sql.gz
 
 # Clean old backups (older than 30 days)
-./docker-scripts/backup-restore.sh clean 30
+./docker-scripts/modules/backup-restore.sh clean 30
 ```
 
 ## Common Tasks
@@ -920,7 +920,7 @@ curl -I https://node.example.com
 ./docker-scripts/setup-docker.sh install-php
 
 # Backup before updates
-./docker-scripts/backup-restore.sh backup-full
+./docker-scripts/modules/backup-restore.sh backup-full
 ```
 
 ### Troubleshooting
@@ -962,7 +962,7 @@ All scripts respect these environment variables:
 COMPOSE_FILE=docker-compose.yml ./docker-scripts/setup-docker.sh status
 
 # Use custom backup directory
-BACKUP_DIR=/mnt/backups ./docker-scripts/backup-restore.sh backup-full
+BACKUP_DIR=/mnt/backups ./docker-scripts/modules/backup-restore.sh backup-full
 ```
 
 ## Directory Structure
