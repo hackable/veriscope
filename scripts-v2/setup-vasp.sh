@@ -126,7 +126,8 @@ CERTKEY=/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem
 
 NETHERMIND_DEST=/opt/nm
 NETHERMIND_CFG=$NETHERMIND_DEST/config.cfg
-NETHERMIND_TARBALL="https://github.com/NethermindEth/nethermind/releases/download/1.15.0/nethermind-linux-amd64-1.15.0-2b70876-20221228.zip"
+NETHERMIND_VERSION="1.25.4"
+NETHERMIND_TARBALL="https://github.com/NethermindEth/nethermind/releases/download/${NETHERMIND_VERSION}/nethermind-${NETHERMIND_VERSION}-20b10b35-linux-x64.zip"
 NETHERMIND_RPC="http://localhost:8545"
 
 NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf

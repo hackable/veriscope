@@ -233,6 +233,10 @@ create_admin() {
 install_redis() {
     echo_info "Installing Redis Stack Server (includes RedisBloom)..."
 
+    # Version lock to match docker-compose.yml
+    local REDIS_STACK_VERSION="7.2.0-v9"
+    local REDIS_STACK_PACKAGE="redis-stack-server=${REDIS_STACK_VERSION}"
+
     # Add Redis Stack repository if not already added
     if [ ! -f /usr/share/keyrings/redis-archive-keyring.gpg ]; then
         curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
@@ -240,8 +244,12 @@ install_redis() {
         apt-get update
     fi
 
-    # Install Redis Stack Server (includes RedisBloom, RedisJSON, RedisSearch, etc.)
-    DEBIAN_FRONTEND=noninteractive apt-get -qq -y install redis-stack-server
+    # Install specific version of Redis Stack Server (includes RedisBloom, RedisJSON, RedisSearch, etc.)
+    echo_info "Installing Redis Stack Server ${REDIS_STACK_VERSION}..."
+    if ! DEBIAN_FRONTEND=noninteractive apt-get -qq -y install ${REDIS_STACK_PACKAGE} 2>/dev/null; then
+        echo_warn "Specific version ${REDIS_STACK_VERSION} not available, installing latest compatible version"
+        DEBIAN_FRONTEND=noninteractive apt-get -qq -y install redis-stack-server
+    fi
 
     # Configure systemd supervision
     if [ -f /etc/redis-stack.conf ]; then
@@ -252,7 +260,9 @@ install_redis() {
     systemctl enable redis-stack-server
     systemctl restart redis-stack-server
 
-    echo_info "Redis Stack Server installed and running"
+    # Display installed version
+    local installed_version=$(redis-stack-server --version 2>/dev/null || echo "version unknown")
+    echo_info "Redis Stack Server installed and running: ${installed_version}"
     echo_info "Included modules: RedisBloom, RedisJSON, RedisSearch, RedisProbabilistic"
     return 0
 }
