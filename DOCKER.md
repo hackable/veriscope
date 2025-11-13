@@ -1055,17 +1055,6 @@ docker run --rm -v veriscope_app_storage:/data -v $BACKUP_DIR:/backup alpine \
 find /backups -type d -mtime +7 -exec rm -rf {} \;
 ```
 
-## Legacy Monolithic Setup
-
-This project previously used a monolithic systemd-based Docker container. If you need to use the legacy setup:
-
-**Container**: Single `veriscope/1.0` container with systemd
-**Dockerfile**: `/Dockerfile` (systemd-ubuntu:22.04)
-**Setup Script**: `scripts/setup-vasp.sh`
-**docker-compose**: Uses the old laravel.test service
-
-See `scripts/setup-vasp.sh` for the monolithic setup instructions.
-
 ## Version Information
 
 **Document Version**: 2.1 - Microservices Architecture with Modular Scripts
@@ -1123,4 +1112,4 @@ For issues or questions:
 
 ---
 
-**Migration Note**: This documentation reflects the microservices architecture introduced in November 2024. The previous monolithic systemd-based setup is still available via the `Dockerfile` and `scripts/setup-vasp.sh` for bare-metal deployments.
+**Note**: For historical context on the architecture evolution, see `ARCHITECTURE_MIGRATION.md`.
