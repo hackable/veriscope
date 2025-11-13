@@ -28,81 +28,25 @@ if [ -f ".env" ]; then
     set +o allexport
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# ============================================================================
+# SOURCE MODULAR COMPONENTS
+# ============================================================================
+# Load all modularized functions from docker-scripts/modules/
+# Modules provide organized, maintainable functions following CODE_QUALITY.md standards
 
-echo_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+MODULES_DIR="${PROJECT_ROOT}/docker-scripts/modules"
 
-echo_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
+# Core modules (must be loaded first)
+source "${MODULES_DIR}/helpers.sh"
+source "${MODULES_DIR}/validators.sh"
 
-echo_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Portable sed in-place editing (works on both macOS and Linux)
-# Usage: portable_sed 's/pattern/replacement/' filename
-# Returns: 0 on success, 1 on error
-portable_sed() {
-    local sed_expression="$1"
-    local file="$2"
-
-    if [ -z "$sed_expression" ] || [ -z "$file" ]; then
-        echo_error "portable_sed: Missing arguments"
-        return 1
-    fi
-
-    if [ ! -f "$file" ]; then
-        echo_error "portable_sed: File not found: $file"
-        return 1
-    fi
-
-    if [ ! -w "$file" ]; then
-        echo_error "portable_sed: File not writable: $file"
-        return 1
-    fi
-
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS requires empty string after -i
-        if ! sed -i "" "$sed_expression" "$file"; then
-            echo_error "portable_sed: sed command failed on $file"
-            return 1
-        fi
-    else
-        # Linux doesn't use empty string
-        if ! sed -i "$sed_expression" "$file"; then
-            echo_error "portable_sed: sed command failed on $file"
-            return 1
-        fi
-    fi
-    return 0
-}
-
-# Detect if running in development mode
-is_dev_mode() {
-    # Check if using dev compose file
-    if [[ "$COMPOSE_FILE" == *"dev"* ]]; then
-        return 0
-    fi
-
-    # Check if APP_ENV is local/development
-    if [ "$APP_ENV" = "local" ] || [ "$APP_ENV" = "development" ]; then
-        return 0
-    fi
-
-    # Check if host is localhost or similar
-    if [[ "$VERISCOPE_SERVICE_HOST" =~ ^(localhost|127\.0\.0\.1|.*\.local|.*\.test)$ ]]; then
-        return 0
-    fi
-
-    return 1
-}
+# Operational modules
+source "${MODULES_DIR}/docker-ops.sh"
+source "${MODULES_DIR}/database.sh"
+source "${MODULES_DIR}/ssl.sh"
+source "${MODULES_DIR}/chain.sh"
+source "${MODULES_DIR}/secrets.sh"
+source "${MODULES_DIR}/services.sh"
 
 # List of known weak/common passwords to reject
 is_weak_password() {
