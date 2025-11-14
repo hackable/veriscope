@@ -130,7 +130,6 @@ clear_cache() {
 install_horizon() {
     echo_info "Installing Laravel Horizon..."
 
-    docker compose -f "$COMPOSE_FILE" exec app composer require laravel/horizon || echo_warn "Horizon may already be installed"
     docker compose -f "$COMPOSE_FILE" exec app php artisan horizon:install
     docker compose -f "$COMPOSE_FILE" exec app php artisan migrate --force
 
