@@ -12,9 +12,9 @@ if [ -z "$SERVICE" ]; then
     echo "Usage: $0 <service> [lines]"
     echo ""
     echo "Available services:"
-    docker-compose -f "$COMPOSE_FILE" ps --services
+    docker compose -f "$COMPOSE_FILE" ps --services
     exit 1
 fi
 
 echo "=== Showing last $LINES lines of $SERVICE logs (press Ctrl+C to exit) ==="
-docker-compose -f "$COMPOSE_FILE" logs --tail="$LINES" -f "$SERVICE"
+docker compose -f "$COMPOSE_FILE" logs --tail="$LINES" -f "$SERVICE"

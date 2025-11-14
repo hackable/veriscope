@@ -63,18 +63,18 @@ All modules are automatically loaded by `setup-docker.sh` and can be sourced ind
 **Workflow:**
 ```bash
 # Build images with application code
-docker-compose build
+docker compose build
 
 # Start services
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f app
-docker-compose logs -f ta-node
+docker compose logs -f app
+docker compose logs -f ta-node
 
 # After code changes: rebuild and restart
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 **Switching networks:**
@@ -86,7 +86,7 @@ echo "VERISCOPE_TARGET=fed_testnet" >> .env
 ./docker-scripts/setup-docker.sh setup-chain
 
 # Restart ta-node to use new artifacts
-docker-compose restart ta-node
+docker compose restart ta-node
 ```
 
 **Inspecting artifacts (if needed):**
@@ -347,7 +347,7 @@ cp .env.example .env
 # This will automatically generate PostgreSQL credentials
 
 # 4. Start services (Nginx enabled by default on port 80)
-docker-compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # OR use the setup script
 ./docker-scripts/setup-docker.sh start
@@ -384,11 +384,11 @@ The setup script automatically generates secure PostgreSQL credentials on first 
 **After generating credentials:**
 ```bash
 # Recreate postgres container with new password
-docker-compose -f docker-compose.yml down postgres
-docker-compose -f docker-compose.yml up -d postgres
+docker compose -f docker-compose.yml down postgres
+docker compose -f docker-compose.yml up -d postgres
 
 # Recreate app container to pick up new credentials
-docker-compose -f docker-compose.yml up -d --force-recreate app
+docker compose -f docker-compose.yml up -d --force-recreate app
 ```
 
 ### Chain Configuration (Network Selection)
@@ -433,7 +433,7 @@ echo "VERISCOPE_TARGET=veriscope_testnet" >> .env
 ./docker-scripts/setup-docker.sh create-sealer
 
 # 4. Start or restart services to apply configuration
-docker-compose -f docker-compose.yml up -d nethermind ta-node
+docker compose -f docker-compose.yml up -d nethermind ta-node
 ```
 
 ### Refreshing Static Nodes from Ethstats
@@ -663,7 +663,7 @@ Generate an Ethereum keypair for your Trust Anchor node:
 - You must also set `TRUST_ANCHOR_PREFNAME` (your organization name)
 - Restart ta-node container after generation:
   ```bash
-  docker-compose -f docker-compose.yml restart ta-node
+  docker compose -f docker-compose.yml restart ta-node
   ```
 
 **When to regenerate:**
@@ -689,7 +689,7 @@ By default, Nginx serves traffic over HTTP on port 80:
 
 ```bash
 # Start all services
-docker-compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # Access your services
 # Laravel: http://localhost/
@@ -720,7 +720,7 @@ echo "VERISCOPE_SERVICE_HOST=node.example.com" >> .env
 #   - ${SSL_KEY_PATH}:/etc/nginx/ssl/key.pem:ro
 
 # 5. Restart nginx
-docker-compose -f docker-compose.yml restart nginx
+docker compose -f docker-compose.yml restart nginx
 
 # Access your services over HTTPS
 # Laravel: https://node.example.com/
@@ -876,13 +876,13 @@ server {
 **Managing Nginx:**
 ```bash
 # View Nginx logs
-docker-compose -f docker-compose.yml logs -f nginx
+docker compose -f docker-compose.yml logs -f nginx
 
 # Restart Nginx (after changing configuration)
-docker-compose -f docker-compose.yml restart nginx
+docker compose -f docker-compose.yml restart nginx
 
 # Check Nginx configuration syntax
-docker-compose -f docker-compose.yml exec nginx nginx -t
+docker compose -f docker-compose.yml exec nginx nginx -t
 ```
 
 #### Renewing SSL Certificates
@@ -905,7 +905,7 @@ Let's Encrypt certificates expire after 90 days. Renew them before expiry:
 
 **Automatic Renewal (Production):**
 
-For production deployments, enable auto-renewal by uncommenting the certbot entrypoint in your production docker-compose file:
+For production deployments, enable auto-renewal by uncommenting the certbot entrypoint in your production docker compose file:
 
 ```yaml
 certbot:
@@ -918,16 +918,16 @@ certbot:
 
 Or use the production profile:
 ```bash
-docker-compose --profile production up -d certbot
+docker compose --profile production up -d certbot
 ```
 
 **Manual renewal check:**
 ```bash
 # Check certificate expiration (via Docker)
-docker-compose -f docker-compose.yml run --rm certbot certificates
+docker compose -f docker-compose.yml run --rm certbot certificates
 
 # Test renewal without actually renewing
-docker-compose -f docker-compose.yml run --rm certbot renew --dry-run
+docker compose -f docker-compose.yml run --rm certbot renew --dry-run
 ```
 
 #### Complete SSL/Nginx Workflow
@@ -956,7 +956,7 @@ dig node.example.com +short
 #            - ${SSL_KEY_PATH}:/etc/nginx/ssl/key.pem:ro
 
 # 6. Restart nginx
-docker-compose -f docker-compose.yml restart nginx
+docker compose -f docker-compose.yml restart nginx
 
 # 7. Verify HTTPS is working
 curl -I https://node.example.com
@@ -976,21 +976,21 @@ curl -I https://node.example.com
 # - Run Certbot manually: sudo certbot certonly --standalone -d node.example.com
 
 # Nginx won't start with SSL
-# - Check nginx config syntax: docker-compose -f docker-compose.yml exec nginx nginx -t
-# - View nginx logs: docker-compose -f docker-compose.yml logs nginx
+# - Check nginx config syntax: docker compose -f docker-compose.yml exec nginx nginx -t
+# - View nginx logs: docker compose -f docker-compose.yml logs nginx
 # - Verify certificate paths in .env: cat .env | grep SSL
 # - Ensure SSL certificates are mounted in docker-compose.yml volumes
 
 # 502 Bad Gateway
-# - Check app is running: docker-compose -f docker-compose.yml ps app
+# - Check app is running: docker compose -f docker-compose.yml ps app
 # - Check app logs: ./docker-scripts/logs.sh app
-# - Verify network connectivity: docker-compose -f docker-compose.yml exec nginx ping app
+# - Verify network connectivity: docker compose -f docker-compose.yml exec nginx ping app
 
 # Certificate renewal failed
 # - Check if port 80 is free during renewal
-# - Manually stop nginx: docker-compose -f docker-compose.yml stop nginx
+# - Manually stop nginx: docker compose -f docker-compose.yml stop nginx
 # - Run renewal: sudo certbot renew
-# - Restart nginx: docker-compose -f docker-compose.yml --profile production up -d nginx
+# - Restart nginx: docker compose -f docker-compose.yml --profile production up -d nginx
 ```
 
 ### Daily Operations
@@ -1036,7 +1036,7 @@ curl -I https://node.example.com
 
 ```bash
 # Check container status
-docker-compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml ps
 
 # View all logs
 ./docker-scripts/setup-docker.sh logs
@@ -1141,7 +1141,7 @@ Each module in `modules/` is self-contained and follows consistent patterns:
 | **Update Chainspec** | `scripts/chainspec-update` | `update-chainspec` | ✅ Complete |
 | **Redis Install** | `install_redis` | Built into Docker Compose | ✅ Automated |
 | **Redis Bloom** | `install_redis_bloom` | Built into redis-stack image | ✅ Automated |
-| **Service Restart** | `systemctl restart` | `docker-compose restart` | ✅ Complete |
+| **Service Restart** | `systemctl restart` | `docker compose restart` | ✅ Complete |
 | **Health Check** | Manual checks | `health` | ✅ Enhanced |
 | **Backups** | Manual | `backup-restore.sh` | ✅ Enhanced |
 | **SSL Certificates** | `setup_or_renew_ssl` | `obtain-ssl`, `renew-ssl` | ✅ Complete |
@@ -1157,7 +1157,7 @@ Each module in `modules/` is self-contained and follows consistent patterns:
 | `setup-vasp.sh` (full installer) | `setup-docker.sh` (orchestrator) |
 | SystemD services | Docker Compose services |
 | Direct Redis/Postgres/Nginx install | Containerized services |
-| `systemctl restart ta.service` | `docker-compose restart ta-node` |
+| `systemctl restart ta.service` | `docker compose restart ta-node` |
 | Manual dependency management | Automated via Docker images |
 | Ubuntu 20.04/22.04 specific | Platform independent |
 | Requires sudo/root | Docker user permissions |
@@ -1167,7 +1167,7 @@ Each module in `modules/` is self-contained and follows consistent patterns:
 For issues or questions:
 1. Check service logs: `./docker-scripts/logs.sh <service>`
 2. Run health check: `./docker-scripts/setup-docker.sh health`
-3. Review container status: `docker-compose -f docker-compose.yml ps`
+3. Review container status: `docker compose -f docker-compose.yml ps`
 4. Consult [DOCKER.md](../DOCKER.md) for detailed Docker documentation
 5. Review [CODE_QUALITY.md](CODE_QUALITY.md) for script development standards
 6. Check module-specific functions in `docker-scripts/modules/`

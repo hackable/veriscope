@@ -26,46 +26,46 @@ full_laravel_setup() {
     echo_info "Running full Laravel setup..."
 
     echo_info "Installing Composer dependencies..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec app composer install; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app composer install; then
         echo_error "Composer install failed"
         return 1
     fi
 
     echo_info "Running database migrations..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
         echo_warn "Database migrations failed or already up to date"
     fi
 
     echo_info "Seeding database..."
-    if docker-compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force; then
+    if docker compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force; then
         echo_info "Database seeded successfully"
     else
         echo_warn "Database seeding failed (may already be seeded)"
     fi
 
     echo_info "Generating application key..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan key:generate --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan key:generate --force
 
     echo_info "Installing Passport..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
 
     echo_info "Generating encryption key..."
     # Check if encryption keys already exist by looking for ENCRYPTION_KEY in .env
-    if docker-compose -f "$COMPOSE_FILE" exec -T app grep -q "^ENCRYPTION_KEY=" .env 2>/dev/null; then
+    if docker compose -f "$COMPOSE_FILE" exec -T app grep -q "^ENCRYPTION_KEY=" .env 2>/dev/null; then
         echo_info "Encryption keys already exist, skipping..."
     else
-        docker-compose -f "$COMPOSE_FILE" exec -T app php artisan encrypt:generate
+        docker compose -f "$COMPOSE_FILE" exec -T app php artisan encrypt:generate
     fi
 
     echo_info "Installing Node.js dependencies..."
-    docker-compose -f "$COMPOSE_FILE" exec app npm install --legacy-peer-deps
+    docker compose -f "$COMPOSE_FILE" exec app npm install --legacy-peer-deps
 
     echo_info "Building frontend assets..."
-    if docker-compose -f "$COMPOSE_FILE" exec app npm run development; then
+    if docker compose -f "$COMPOSE_FILE" exec app npm run development; then
         echo_info "Frontend assets built successfully"
     else
         echo_warn "Frontend build failed or completed with warnings"
-        echo_info "You can rebuild later with: docker-compose exec app npm run development"
+        echo_info "You can rebuild later with: docker compose exec app npm run development"
     fi
 
     echo_info "Full Laravel setup completed"
@@ -75,7 +75,7 @@ full_laravel_setup() {
 # Returns: 0 on success
 generate_app_key() {
     echo_info "Generating Laravel application key..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan key:generate --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan key:generate --force
     echo_info "Application key generated"
 }
 
@@ -92,22 +92,22 @@ clear_cache() {
 
     local failed=false
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan cache:clear; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan cache:clear; then
         echo_warn "Failed to clear application cache"
         failed=true
     fi
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan config:clear; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan config:clear; then
         echo_warn "Failed to clear config cache"
         failed=true
     fi
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan route:clear; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan route:clear; then
         echo_warn "Failed to clear route cache"
         failed=true
     fi
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan view:clear; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan view:clear; then
         echo_warn "Failed to clear view cache"
         failed=true
     fi
@@ -130,9 +130,9 @@ clear_cache() {
 install_horizon() {
     echo_info "Installing Laravel Horizon..."
 
-    docker-compose -f "$COMPOSE_FILE" exec app composer require laravel/horizon || echo_warn "Horizon may already be installed"
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan horizon:install
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force
+    docker compose -f "$COMPOSE_FILE" exec app composer require laravel/horizon || echo_warn "Horizon may already be installed"
+    docker compose -f "$COMPOSE_FILE" exec app php artisan horizon:install
+    docker compose -f "$COMPOSE_FILE" exec app php artisan migrate --force
 
     echo_info "Horizon installed successfully"
     echo_info "Note: Horizon will run automatically via Laravel's queue worker"
@@ -143,7 +143,7 @@ install_horizon() {
 # Returns: 0 on success
 install_passport() {
     echo_info "Installing Laravel Passport..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
     echo_info "Passport installed"
 }
 
@@ -152,7 +152,7 @@ install_passport() {
 # Returns: 0 on success
 install_passport_env() {
     echo_info "Installing Passport client environment variables..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan passportenv:link
+    docker compose -f "$COMPOSE_FILE" exec app php artisan passportenv:link
     echo_info "Passport environment variables linked"
 }
 
@@ -171,7 +171,7 @@ install_address_proofs() {
         echo_info "To download address proofs later, run: ./docker-scripts/setup-docker.sh install-address-proofs"
 
         # Still create the directory even if skipping download
-        docker-compose -f "$COMPOSE_FILE" exec -T app mkdir -p /opt/veriscope/veriscope_addressproof 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" exec -T app mkdir -p /opt/veriscope/veriscope_addressproof 2>/dev/null || true
         return 0
     fi
 
@@ -191,9 +191,9 @@ install_address_proofs() {
 
     # Create the directory that the Laravel app expects (bare-metal path)
     echo_info "Creating address proof directory..."
-    docker-compose -f "$COMPOSE_FILE" exec -T app mkdir -p /opt/veriscope/veriscope_addressproof
+    docker compose -f "$COMPOSE_FILE" exec -T app mkdir -p /opt/veriscope/veriscope_addressproof
 
-    if docker-compose -f "$COMPOSE_FILE" exec app php artisan download:addressproof; then
+    if docker compose -f "$COMPOSE_FILE" exec app php artisan download:addressproof; then
         echo_info "Address proofs downloaded successfully"
     else
         echo_warn "Failed to download address proofs - you can download them manually later"
@@ -230,7 +230,7 @@ create_admin() {
     fi
 
     echo_info "Creating admin user..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan createuser:admin
+    docker compose -f "$COMPOSE_FILE" exec app php artisan createuser:admin
     if [ $? -ne 0 ]; then
         echo_warn "Admin user creation cancelled or failed"
         echo_info "You can create an admin user later by running:"
@@ -252,7 +252,7 @@ install_node_deps() {
         return 1
     fi
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec ta-node sh -c "cd /app && npm install --legacy-peer-deps"; then
+    if ! docker compose -f "$COMPOSE_FILE" exec ta-node sh -c "cd /app && npm install --legacy-peer-deps"; then
         echo_error "Failed to install Node.js dependencies"
         return 1
     fi
@@ -270,7 +270,7 @@ install_laravel_deps() {
         return 1
     fi
 
-    if ! docker-compose -f "$COMPOSE_FILE" exec app composer install; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app composer install; then
         echo_error "Failed to install Laravel dependencies"
         return 1
     fi
@@ -303,7 +303,7 @@ health_check() {
         local container="${containers[$i]}"
         local name="${container_names[$i]}"
 
-        if docker-compose -f "$COMPOSE_FILE" ps "$container" 2>/dev/null | grep -q "Up"; then
+        if docker compose -f "$COMPOSE_FILE" ps "$container" 2>/dev/null | grep -q "Up"; then
             echo_info "✓ $name is running"
         else
             echo_error "✗ $name is not running"
@@ -318,7 +318,7 @@ health_check() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # PostgreSQL
-    if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
         echo_info "✓ PostgreSQL is accepting connections"
     else
         echo_error "✗ PostgreSQL is not ready"
@@ -326,7 +326,7 @@ health_check() {
     fi
 
     # Redis
-    if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+    if docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
         echo_info "✓ Redis is responding"
     else
         echo_error "✗ Redis is not responding"
@@ -334,7 +334,7 @@ health_check() {
     fi
 
     # Laravel
-    if docker-compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
         echo_info "✓ Laravel app is functional"
     else
         echo_error "✗ Laravel app is not functional"
@@ -342,7 +342,7 @@ health_check() {
     fi
 
     # TA Node
-    if docker-compose -f "$COMPOSE_FILE" exec -T ta-node node --version >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T ta-node node --version >/dev/null 2>&1; then
         echo_info "✓ TA Node is functional"
     else
         echo_error "✗ TA Node is not functional"
@@ -350,7 +350,7 @@ health_check() {
     fi
 
     # Nginx
-    if docker-compose -f "$COMPOSE_FILE" exec -T nginx nginx -t >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T nginx nginx -t >/dev/null 2>&1; then
         echo_info "✓ Nginx configuration is valid"
     else
         echo_error "✗ Nginx configuration has errors"
@@ -364,7 +364,7 @@ health_check() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Test database connection from app
-    if docker-compose -f "$COMPOSE_FILE" exec -T app php artisan db:show >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T app php artisan db:show >/dev/null 2>&1; then
         echo_info "✓ App can connect to database"
     else
         echo_error "✗ App cannot connect to database"
@@ -372,7 +372,7 @@ health_check() {
     fi
 
     # Test Redis connection from app
-    if docker-compose -f "$COMPOSE_FILE" exec -T app sh -c "php -r \"(new Redis())->connect('redis', 6379);\"" >/dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T app sh -c "php -r \"(new Redis())->connect('redis', 6379);\"" >/dev/null 2>&1; then
         echo_info "✓ App can connect to Redis"
     else
         echo_error "✗ App cannot connect to Redis"
@@ -391,7 +391,7 @@ health_check() {
         return 0
     else
         echo_error "❌ Some services are unhealthy"
-        echo_info "Use 'docker-compose logs <service>' to investigate issues"
+        echo_info "Use 'docker compose logs <service>' to investigate issues"
         echo ""
         return 1
     fi

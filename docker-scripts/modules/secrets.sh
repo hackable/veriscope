@@ -236,18 +236,18 @@ regenerate_webhook_secret() {
     local restart_count=0
 
     # Restart app service
-    if docker-compose -f "$COMPOSE_FILE" ps app 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "$COMPOSE_FILE" ps app 2>/dev/null | grep -q "Up"; then
         echo_info "Restarting app service..."
-        docker-compose -f "$COMPOSE_FILE" restart app
+        docker compose -f "$COMPOSE_FILE" restart app
         restart_count=$((restart_count + 1))
     else
         echo_warn "App service not running (skip restart)"
     fi
 
     # Restart ta-node service
-    if docker-compose -f "$COMPOSE_FILE" ps ta-node 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "$COMPOSE_FILE" ps ta-node 2>/dev/null | grep -q "Up"; then
         echo_info "Restarting ta-node service..."
-        docker-compose -f "$COMPOSE_FILE" restart ta-node
+        docker compose -f "$COMPOSE_FILE" restart ta-node
         restart_count=$((restart_count + 1))
     else
         echo_warn "TA Node service not running (skip restart)"
@@ -277,7 +277,7 @@ create_sealer_keypair() {
     echo_info "Generating Ethereum keypair for Trust Anchor..."
 
     # Generate keypair using ethers.js in a one-off container (no need for ta-node to be running)
-    local output=$(docker-compose -f "$COMPOSE_FILE" run --rm --no-deps -T ta-node node -e "
+    local output=$(docker compose -f "$COMPOSE_FILE" run --rm --no-deps -T ta-node node -e "
     const ethers = require('ethers');
     const wallet = ethers.Wallet.createRandom();
     console.log(JSON.stringify({
@@ -355,6 +355,6 @@ regenerate_encrypt_secret() {
     echo_info "Generating new encryption secret..."
     echo_warn "This will reset your encryption keys and you will lose access to encrypted data!"
     # Use 'yes' to automatically answer the prompt
-    echo "yes" | docker-compose -f "$COMPOSE_FILE" exec -T app php artisan encrypt:generate
+    echo "yes" | docker compose -f "$COMPOSE_FILE" exec -T app php artisan encrypt:generate
     echo_info "Encryption secret regenerated"
 }

@@ -45,7 +45,7 @@ is_container_running() {
         return 1
     fi
 
-    if docker-compose -f "$COMPOSE_FILE" ps "$container_name" 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "$COMPOSE_FILE" ps "$container_name" 2>/dev/null | grep -q "Up"; then
         return 0
     else
         return 1
@@ -60,7 +60,7 @@ wait_for_postgres_ready() {
     echo_info "Waiting for PostgreSQL to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U "${POSTGRES_USER:-trustanchor}" >/dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U "${POSTGRES_USER:-trustanchor}" >/dev/null 2>&1; then
             echo_info "PostgreSQL is ready"
             return 0
         fi
@@ -80,7 +80,7 @@ wait_for_redis_ready() {
     echo_info "Waiting for Redis to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping >/dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping >/dev/null 2>&1; then
             echo_info "Redis is ready"
             return 0
         fi
@@ -224,7 +224,7 @@ backup_database() {
     # Check if postgres container is running
     if ! is_container_running "postgres"; then
         echo_error "PostgreSQL container is not running"
-        echo_info "Start containers with: docker-compose -f $COMPOSE_FILE up -d"
+        echo_info "Start containers with: docker compose -f $COMPOSE_FILE up -d"
         log_operation "DATABASE_BACKUP" "FAILED" "PostgreSQL container not running"
         return 1
     fi
@@ -236,7 +236,7 @@ backup_database() {
     fi
 
     # Perform backup
-    if ! docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$backup_file" 2>/dev/null; then
+    if ! docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$backup_file" 2>/dev/null; then
         echo_error "Database backup failed"
         rm -f "$backup_file"
         log_operation "DATABASE_BACKUP" "FAILED" "pg_dump command failed"
@@ -298,7 +298,7 @@ restore_database() {
     # Check if postgres container is running
     if ! is_container_running "postgres"; then
         echo_error "PostgreSQL container is not running"
-        echo_info "Start containers with: docker-compose -f $COMPOSE_FILE up -d"
+        echo_info "Start containers with: docker compose -f $COMPOSE_FILE up -d"
         log_operation "DATABASE_RESTORE" "FAILED" "PostgreSQL container not running"
         return 1
     fi
@@ -326,13 +326,13 @@ restore_database() {
 
     # Handle gzipped files
     if [[ "$backup_file" == *.gz ]]; then
-        if ! gunzip -c "$backup_file" | docker-compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" 2>/dev/null; then
+        if ! gunzip -c "$backup_file" | docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" 2>/dev/null; then
             echo_error "Database restore failed"
             log_operation "DATABASE_RESTORE" "FAILED" "$backup_file - psql command failed"
             return 1
         fi
     else
-        if ! docker-compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" < "$backup_file" 2>/dev/null; then
+        if ! docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" < "$backup_file" 2>/dev/null; then
             echo_error "Database restore failed"
             log_operation "DATABASE_RESTORE" "FAILED" "$backup_file - psql command failed"
             return 1
@@ -365,7 +365,7 @@ backup_redis() {
     # Check if redis container is running
     if ! is_container_running "redis"; then
         echo_error "Redis container is not running"
-        echo_info "Start containers with: docker-compose -f $COMPOSE_FILE up -d"
+        echo_info "Start containers with: docker compose -f $COMPOSE_FILE up -d"
         log_operation "REDIS_BACKUP" "FAILED" "Redis container not running"
         return 1
     fi
@@ -378,14 +378,14 @@ backup_redis() {
 
     # Trigger Redis SAVE
     echo_info "Triggering Redis SAVE..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli SAVE >/dev/null 2>&1; then
+    if ! docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli SAVE >/dev/null 2>&1; then
         echo_error "Redis SAVE command failed"
         log_operation "REDIS_BACKUP" "FAILED" "SAVE command failed"
         return 1
     fi
 
     # Get redis container ID
-    local redis_container=$(docker-compose -f "$COMPOSE_FILE" ps -q redis)
+    local redis_container=$(docker compose -f "$COMPOSE_FILE" ps -q redis)
     if [ -z "$redis_container" ]; then
         echo_error "Redis container not found"
         log_operation "REDIS_BACKUP" "FAILED" "Container ID not found"
@@ -725,7 +725,7 @@ restore_redis() {
     # Check if redis container is running
     if ! is_container_running "redis"; then
         echo_error "Redis container is not running"
-        echo_info "Start containers with: docker-compose -f $COMPOSE_FILE up -d"
+        echo_info "Start containers with: docker compose -f $COMPOSE_FILE up -d"
         log_operation "REDIS_RESTORE" "FAILED" "Redis container not running"
         return 1
     fi
@@ -745,14 +745,14 @@ restore_redis() {
     echo_info "Stopping Redis to restore data..."
 
     # Stop Redis container
-    if ! docker-compose -f "$COMPOSE_FILE" stop redis 2>/dev/null; then
+    if ! docker compose -f "$COMPOSE_FILE" stop redis 2>/dev/null; then
         echo_error "Failed to stop Redis container"
         log_operation "REDIS_RESTORE" "FAILED" "Could not stop Redis container"
         return 1
     fi
 
     # Get redis container ID
-    local redis_container=$(docker-compose -f "$COMPOSE_FILE" ps -aq redis)
+    local redis_container=$(docker compose -f "$COMPOSE_FILE" ps -aq redis)
     if [ -z "$redis_container" ]; then
         echo_error "Redis container not found"
         log_operation "REDIS_RESTORE" "FAILED" "Container ID not found"
@@ -766,7 +766,7 @@ restore_redis() {
     if [[ "$backup_file" == *.gz ]]; then
         if ! gunzip -c "$backup_file" > "$temp_rdb" 2>/dev/null; then
             echo_error "Failed to decompress backup file"
-            docker-compose -f "$COMPOSE_FILE" start redis 2>/dev/null
+            docker compose -f "$COMPOSE_FILE" start redis 2>/dev/null
             rm -f "$temp_rdb"
             log_operation "REDIS_RESTORE" "FAILED" "Decompression failed"
             return 1
@@ -778,7 +778,7 @@ restore_redis() {
     # Copy to container
     if ! docker cp "$temp_rdb" "$redis_container:/data/dump.rdb" 2>/dev/null; then
         echo_error "Failed to copy backup file to container"
-        docker-compose -f "$COMPOSE_FILE" start redis 2>/dev/null
+        docker compose -f "$COMPOSE_FILE" start redis 2>/dev/null
         rm -f "$temp_rdb"
         log_operation "REDIS_RESTORE" "FAILED" "docker cp failed"
         return 1
@@ -788,7 +788,7 @@ restore_redis() {
 
     # Start Redis
     echo_info "Starting Redis with restored data..."
-    if ! docker-compose -f "$COMPOSE_FILE" start redis 2>/dev/null; then
+    if ! docker compose -f "$COMPOSE_FILE" start redis 2>/dev/null; then
         echo_error "Failed to start Redis container"
         log_operation "REDIS_RESTORE" "FAILED" "Could not start Redis container"
         return 1
@@ -868,7 +868,7 @@ restore_app_files() {
 
     echo_info "Application files restored successfully"
     echo_warn "IMPORTANT: You may need to restart services for changes to take effect"
-    echo_info "Run: docker-compose -f $COMPOSE_FILE restart"
+    echo_info "Run: docker compose -f $COMPOSE_FILE restart"
     log_operation "APP_FILES_RESTORE" "SUCCESS" "$backup_file"
     return 0
 }

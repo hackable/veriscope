@@ -116,7 +116,7 @@ tunnel_start() {
     fi
 
     # Start only the tunnel container without starting other services
-    docker-compose --profile tunnel up -d --no-deps tunnel
+    docker compose --profile tunnel up -d --no-deps tunnel
 
     echo_info "Waiting for tunnel to establish connection..."
     sleep 5
@@ -127,8 +127,8 @@ tunnel_start() {
 # Stop ngrok tunnel
 tunnel_stop() {
     echo_info "Stopping ngrok tunnel..."
-    docker-compose --profile tunnel stop tunnel
-    docker-compose --profile tunnel rm -f tunnel
+    docker compose --profile tunnel stop tunnel
+    docker compose --profile tunnel rm -f tunnel
     echo -e "${GREEN}[SUCCESS]${NC} Ngrok tunnel stopped"
 }
 
@@ -358,7 +358,7 @@ EOF
     echo_info "  - $ssl_key:/etc/nginx/ssl/key.pem:ro"
     echo_info ""
     echo_info "Then restart nginx:"
-    echo_info "  docker-compose -f $COMPOSE_FILE restart nginx"
+    echo_info "  docker compose -f $COMPOSE_FILE restart nginx"
     echo_info ""
     echo_info "Your services will be available at:"
     echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST"
@@ -547,8 +547,8 @@ menu() {
                 echo_warn "Failed to stop services cleanly - continuing..."
             fi
 
-            # Get the project name from docker-compose config
-            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+            # Get the project name from docker compose config
+            project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
 
             if [ -z "$project_name" ]; then
                 echo_error "Failed to determine project name - aborting installation"
@@ -580,7 +580,7 @@ menu() {
             echo_info "Waiting for services to be ready..."
             if ! wait_for_services_ready 120; then
                 echo_error "Services failed to become ready - aborting installation"
-                echo_info "Check service logs: docker-compose -f $COMPOSE_FILE logs"
+                echo_info "Check service logs: docker compose -f $COMPOSE_FILE logs"
                 exit 1
             fi
 
@@ -593,7 +593,7 @@ menu() {
 
             # Restart ta-node to pick up artifacts
             echo_info "Restarting ta-node to load chain artifacts..."
-            if ! docker-compose -f "$COMPOSE_FILE" restart ta-node; then
+            if ! docker compose -f "$COMPOSE_FILE" restart ta-node; then
                 echo_error "Failed to restart ta-node - aborting installation"
                 exit 1
             fi
@@ -883,10 +883,10 @@ else
 
             # Reset volumes to ensure clean state with new credentials
             echo_info "Ensuring clean database and cache volumes..."
-            docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+            docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
 
-            # Get the project name from docker-compose config
-            project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+            # Get the project name from docker compose config
+            project_name=$(docker compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
             docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
@@ -927,7 +927,7 @@ else
             echo "  stop                       - Stop all services"
             echo "  restart                    - Restart all services"
             echo "  status                     - Show service status"
-            echo "  logs [service]             - Show docker-compose logs"
+            echo "  logs [service]             - Show docker compose logs"
             echo "  supervisord-logs           - Show supervisord logs (interactive)"
             echo "  init-db                    - Initialize database"
             echo "  create-admin               - Create admin user"

@@ -31,27 +31,27 @@ regenerate_webhook_secret() {
     echo "WEBHOOK_CLIENT_SECRET=$new_secret"
     echo ""
     echo_info "Then restart the app container:"
-    echo "docker-compose -f $COMPOSE_FILE restart app"
+    echo "docker compose -f $COMPOSE_FILE restart app"
 }
 
 # Regenerate Laravel app key
 regenerate_app_key() {
     echo_info "Generating new Laravel APP_KEY..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan key:generate
+    docker compose -f "$COMPOSE_FILE" exec app php artisan key:generate
     echo_info "APP_KEY regenerated successfully"
 }
 
 # Regenerate Passport keys
 regenerate_passport_keys() {
     echo_info "Generating new Laravel Passport keys..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan passport:keys --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan passport:keys --force
     echo_info "Passport keys regenerated successfully"
 }
 
 # Generate Ethereum key pair
 generate_eth_keypair() {
     echo_info "Generating new Ethereum keypair..."
-    docker-compose -f "$COMPOSE_FILE" exec ta-node node -e "
+    docker compose -f "$COMPOSE_FILE" exec ta-node node -e "
     const ethers = require('ethers');
     const wallet = ethers.Wallet.createRandom();
     console.log('Private Key:', wallet.privateKey);
@@ -62,7 +62,7 @@ generate_eth_keypair() {
 # Regenerate encryption secret (EloquentEncryption)
 regenerate_encrypt_secret() {
     echo_info "Generating new encryption secret..."
-    docker-compose -f "$COMPOSE_FILE" exec app php artisan encrypt:generate --force
+    docker compose -f "$COMPOSE_FILE" exec app php artisan encrypt:generate --force
     echo_info "Encryption secret regenerated successfully"
 }
 

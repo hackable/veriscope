@@ -161,7 +161,7 @@ POSTGRES_DB=$pgdb" "$env_file"
 # Returns: 0 on success, 1 on failure
 init_database() {
     echo_info "Initializing Laravel database..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
         echo_error "Failed to initialize database"
         return 1
     fi
@@ -172,7 +172,7 @@ init_database() {
 # Returns: 0 on success, 1 on failure
 run_migrations() {
     echo_info "Running Laravel migrations..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan migrate --force; then
         echo_error "Failed to run migrations"
         return 1
     fi
@@ -184,7 +184,7 @@ run_migrations() {
 # Returns: 0 on success, 1 on failure
 seed_database() {
     echo_info "Seeding database..."
-    if ! docker-compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force; then
+    if ! docker compose -f "$COMPOSE_FILE" exec app php artisan db:seed --force; then
         echo_error "Failed to seed database"
         return 1
     fi

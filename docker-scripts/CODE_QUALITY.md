@@ -110,7 +110,7 @@ is_container_running() {
         return 1
     fi
 
-    if docker-compose -f "$COMPOSE_FILE" ps "$container_name" 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "$COMPOSE_FILE" ps "$container_name" 2>/dev/null | grep -q "Up"; then
         return 0
     else
         return 1
@@ -118,7 +118,7 @@ is_container_running() {
 }
 ```
 
-**Usage**: Call before any `docker-compose exec` operation
+**Usage**: Call before any `docker compose exec` operation
 
 ### Service Readiness Checks
 
@@ -131,7 +131,7 @@ wait_for_postgres_ready() {
     echo_info "Waiting for PostgreSQL to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U "${POSTGRES_USER:-trustanchor}" >/dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U "${POSTGRES_USER:-trustanchor}" >/dev/null 2>&1; then
             echo_info "PostgreSQL is ready"
             return 0
         fi
@@ -151,7 +151,7 @@ wait_for_redis_ready() {
     echo_info "Waiting for Redis to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping >/dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping >/dev/null 2>&1; then
             echo_info "Redis is ready"
             return 0
         fi
@@ -267,7 +267,7 @@ create_backup() {
 ```bash
 restart_service() {
     # Stop service
-    if ! docker-compose stop service_name; then
+    if ! docker compose stop service_name; then
         echo_error "Failed to stop service"
         return 1
     fi
@@ -276,12 +276,12 @@ restart_service() {
     if ! perform_operation; then
         echo_error "Operation failed"
         # Attempt to restore service
-        docker-compose start service_name
+        docker compose start service_name
         return 1
     fi
 
     # Start service
-    if ! docker-compose start service_name; then
+    if ! docker compose start service_name; then
         echo_error "Failed to start service"
         return 1
     fi
@@ -420,10 +420,10 @@ check_disk_space() {
 #### 4. **Container State Validation**
 
 ```bash
-# Always check before docker-compose exec
+# Always check before docker compose exec
 if ! is_container_running "container_name"; then
     echo_error "Container is not running: container_name"
-    echo_info "Start with: docker-compose up -d container_name"
+    echo_info "Start with: docker compose up -d container_name"
     return 1
 fi
 ```
@@ -432,7 +432,7 @@ fi
 
 ```bash
 # Always wait after starting services
-docker-compose up -d postgres
+docker compose up -d postgres
 
 # Wait for service to be ready (don't assume immediate availability)
 if ! wait_for_postgres_ready 60; then
@@ -475,7 +475,7 @@ fi
 
 ```bash
 # ❌ INCORRECT: Hardcoded credentials
-docker-compose exec postgres pg_dump -U trustanchor trustanchor
+docker compose exec postgres pg_dump -U trustanchor trustanchor
 
 # ✅ CORRECT: Load from environment
 load_credentials() {
@@ -487,7 +487,7 @@ load_credentials() {
 }
 
 load_credentials
-docker-compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"
+docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"
 ```
 
 ### 2. **Input Validation**
@@ -533,10 +533,10 @@ validate_path() {
 
 ```bash
 # ❌ INCORRECT: Unsafe command substitution
-docker cp $(docker-compose ps -q redis):/data/dump.rdb backup.rdb
+docker cp $(docker compose ps -q redis):/data/dump.rdb backup.rdb
 
 # ✅ CORRECT: Validate before use
-redis_container=$(docker-compose ps -q redis)
+redis_container=$(docker compose ps -q redis)
 
 if [ -z "$redis_container" ]; then
     echo_error "Redis container not found"
@@ -748,7 +748,7 @@ Error messages must include:
 ```bash
 # ✅ CORRECT: Actionable error message
 echo_error "PostgreSQL container is not running"
-echo_info "Start containers with: docker-compose up -d"
+echo_info "Start containers with: docker compose up -d"
 echo_info "Or run full setup: ./setup-docker.sh i"
 
 # ❌ INCORRECT: Vague error
@@ -873,7 +873,7 @@ Test with actual Docker environment:
 
 ```bash
 # Start test environment
-docker-compose up -d
+docker compose up -d
 
 # Run module operations
 ./module.sh test-command
@@ -975,7 +975,7 @@ Use this checklist when reviewing code:
 - [ ] No silent failures
 
 ### ✅ Validation
-- [ ] Container state checked before `docker-compose exec`
+- [ ] Container state checked before `docker compose exec`
 - [ ] Service readiness verified after starting containers
 - [ ] Disk space checked before creating large files
 - [ ] File/directory existence and permissions validated
@@ -1054,27 +1054,27 @@ fi
 
 ```bash
 # WRONG
-docker-compose exec postgres psql ...
+docker compose exec postgres psql ...
 
 # RIGHT
 if ! is_container_running "postgres"; then
     echo_error "PostgreSQL container not running"
     return 1
 fi
-docker-compose exec postgres psql ...
+docker compose exec postgres psql ...
 ```
 
 ### ❌ Race Conditions
 
 ```bash
 # WRONG
-docker-compose up -d postgres
-docker-compose exec postgres psql ...  # Might not be ready
+docker compose up -d postgres
+docker compose exec postgres psql ...  # Might not be ready
 
 # RIGHT
-docker-compose up -d postgres
+docker compose up -d postgres
 wait_for_postgres_ready 60
-docker-compose exec postgres psql ...
+docker compose exec postgres psql ...
 ```
 
 ### ❌ Hardcoded Values

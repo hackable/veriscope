@@ -248,7 +248,7 @@ check_docker() {
         exit 1
     fi
 
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    if ! command -v docker compose &> /dev/null && ! docker compose version &> /dev/null; then
         echo_error "Docker Compose is not installed. Please install Docker Compose first."
         exit 1
     fi
