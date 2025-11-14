@@ -1,0 +1,68 @@
+---
+- name: Update Trust Anchor API config
+  hosts: all
+
+  tasks:
+
+    - name: Check inputs - Update TA API config
+      ansible.builtin.assert:
+        that:
+          - ta_api_config_changes is defined and ta_api_config_changes is mapping
+        success_msg: Required inputs provided. Proceeding to copy chain artifacts and setup nodejs app.
+        fail_msg: Required inputs not provided. Please provide required values and try again.
+    
+    - name: Stop required services - Update TA API config
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: stopped
+      ignore_errors: false
+      become: true
+      with_items:
+        - ta-node-1
+
+    - name: Update TA API config
+      ansible.builtin.lineinfile:
+        path: "{{ api_config_path }}"
+        state: present
+        search_string: "{{ item.key }}="
+        line: "{{ item.key }}=\"{{ item.value }}\""
+      with_items:
+        - "{{ ta_api_config_changes | dict2items }}"
+
+    - name: Start TA API services - Update TA API config
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+      ignore_errors: false
+      become: true
+      with_items:
+        - ta-node-1
+    
+    - name: Read TA API config file on remote host
+      ansible.builtin.slurp:
+        src: "{{ api_config_path }}"
+      register: ta_api_config
+
+    - name: Find HTTP value
+      ansible.builtin.set_fact:
+        http_value: "{{ ta_api_config['content'] | b64decode | regex_findall('HTTP=\"(.*)\"') | first }}"
+    
+    - name: Find WS value
+      ansible.builtin.set_fact:
+        ws_value: "{{ ta_api_config['content'] | b64decode | regex_findall('WS=\"(.*)\"') | first }}"
+
+    - name: Print HTTP and WS values
+      ansible.builtin.debug:
+        msg: "http value = {{ http_value  }} \\n ws_value = {{ ws_value }}"
+      
+
+- name: Restart nethermind service
+  hosts: nethermind
+  tasks:
+    - name: Conditionally start nethermind service
+      ansible.builtin.service:
+        name: nethermind
+        state: started
+      ignore_errors: false
+      become: true
+      when: "'localhost' in http_value and 'localhost' in ws_value"

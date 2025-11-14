@@ -1,0 +1,83 @@
+---
+- name: Install and configure the address proofs module
+  hosts: web
+  gather_facts: false
+  tasks:
+    - name: Check inputs - addressproofs module
+      ansible.builtin.assert:
+        that:
+          - gh_pat is defined and gh_pat is truthy
+        success_msg: Required inputs provided. Proceeding to install/update addressproofs module.
+        fail_msg: Required inputs not provided. Please provide required values and try again.
+
+    - name: Install prerequisite packages - addressproofs
+      ansible.builtin.apt:
+        state: present
+        update_cache: true
+        pkg:
+          - protobuf-compiler
+          - libtiff5-dev
+          - libjpeg8-dev
+          - libopenjp2-7-dev
+          - zlib1g-dev
+          - libfreetype6-dev
+          - liblcms2-dev
+          - libwebp-dev
+          - tcl8.6-dev
+          - tk8.6-dev
+          - python3-tk
+          - libharfbuzz-dev
+          - libfribidi-dev
+          - libxcb1-dev
+      become: true
+
+    - name: Delete {{ addressproofs_root }}
+      ansible.builtin.file:
+        path: "{{ addressproofs_root }}"
+        state: absent
+      become: true
+
+    - name: Invoke addressproofs module download
+      ansible.builtin.command: php artisan download:addressproof {{ gh_pat }}
+      args:
+        chdir: "{{ dashboard_root }}"
+      register: download_addressproofs_output
+      changed_when: "'Shyft AddressProofs Library was successfully downloaded' in download_addressproofs_output.stdout"
+      failed_when: >
+        (download_addressproofs_output.stdout is search('Shyft AddressProofs Error:.*: Directory not empty')) or
+        (download_addressproofs_output.stdout is search('Shyft AddressProofs Error: Client error:.*401 Unauthorized.*')) or
+        (download_addressproofs_output.rc != 0) or
+        ('Shyft AddressProofs Library was successfully downloaded' not in download_addressproofs_output.stdout)
+
+    - name: Print addressproofs module download result
+      ansible.builtin.debug:
+        var: download_addressproofs_output
+
+    - name: Install node.js deps for addressproofs (npm install)
+      community.general.npm:
+        path: "{{ addressproofs_root }}"
+        state: present
+
+    # Need to install python requirements as root because they need to be accessible to the php-fpm user (www-data)
+    - name: Install addressproofs python requirements
+      ansible.builtin.pip:
+        requirements: "{{ addressproofs_root }}/requirements.txt"
+        executable: pip3
+      become: true
+
+    - name: Run addressproofs unit tests
+      ansible.builtin.command: python3 -m unittest provers.py
+      args:
+        chdir: "{{ addressproofs_root }}"
+      register: unittest_result
+      failed_when: unittest_result.rc != 0
+      ignore_errors: true
+    
+    - name: Print unit test output
+      ansible.builtin.debug:
+        var: unittest_result.stdout
+
+    - name: Fail the installation if unit tests fail
+      ansible.builtin.fail:
+        msg: "Addressproofs unit tests failed. Hence, the installation "
+      when: unittest_result.rc != 0
