@@ -119,7 +119,7 @@ is_container_running() {
         return 1
     fi
 
-    if docker-compose -f "${COMPOSE_FILE:-docker-compose.yml}" ps "$container_name" 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "${COMPOSE_FILE:-docker-compose.yml}" ps "$container_name" 2>/dev/null | grep -q "Up"; then
         return 0
     else
         return 1

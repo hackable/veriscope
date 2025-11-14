@@ -19,13 +19,13 @@ source "${SCRIPT_DIR}/helpers.sh"
 # Check blockchain synchronization status
 # Queries Nethermind RPC to get sync status, peer count, and current block
 check_blockchain_sync() {
-    if ! docker-compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
+    if ! docker compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
         echo_warn "⚠ Nethermind is not running"
         return
     fi
 
     # Get project name and network for Docker networking
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
     local network_name="${project_name}_veriscope"
 
     # Query Nethermind RPC - use temporary Alpine container with curl
@@ -239,8 +239,8 @@ setup_chain_config() {
     if [ -d "$chain_dir/artifacts" ]; then
         echo_info "Copying chain artifacts for $VERISCOPE_TARGET to Docker volume..."
 
-        # Get the project name from docker-compose config
-        local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+        # Get the project name from docker compose config
+        local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
         local volume_name="${project_name}_artifacts"
 
         # Create volume if it doesn't exist
@@ -423,14 +423,14 @@ refresh_static_nodes() {
     echo_info "Retrieving this node's enode information..."
 
     # Check if Nethermind is running
-    if ! docker-compose -f "$COMPOSE_FILE" ps nethermind | grep -q "Up"; then
+    if ! docker compose -f "$COMPOSE_FILE" ps nethermind | grep -q "Up"; then
         echo_warn "Nethermind container not running"
         echo_info "Start services and run this command again to update enode contact info"
         return 0
     fi
 
     # Get the project name and construct the network name dynamically
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
     local network_name="${project_name}_veriscope"
 
     echo_info "Using Docker network: $network_name"
@@ -478,7 +478,7 @@ refresh_static_nodes() {
 
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
         echo_info "Stopping Nethermind..."
-        docker-compose -f "$COMPOSE_FILE" stop nethermind
+        docker compose -f "$COMPOSE_FILE" stop nethermind
 
         echo_info "Clearing peer database..."
         # Clear discovery and peer databases from volume using temporary alpine container
@@ -486,7 +486,7 @@ refresh_static_nodes() {
         echo_info "Peer cache cleared"
 
         echo_info "Starting Nethermind with updated configuration..."
-        docker-compose -f "$COMPOSE_FILE" up -d nethermind
+        docker compose -f "$COMPOSE_FILE" up -d nethermind
         echo_info "Nethermind restarted successfully"
     else
         echo_info "Skipping Nethermind restart. Changes will apply on next restart."
@@ -615,7 +615,7 @@ update_chainspec() {
     echo_info "Chainspec updated successfully: $chainspec_file"
 
     # Update Nethermind container if running
-    if docker-compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
+    if docker compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
         echo_warn "Nethermind is running. Changes will take effect after restart."
 
         # Check if running interactively
@@ -629,10 +629,10 @@ update_chainspec() {
 
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             echo_info "Restarting Nethermind..."
-            docker-compose -f "$COMPOSE_FILE" restart nethermind
+            docker compose -f "$COMPOSE_FILE" restart nethermind
             echo_info "Nethermind restarted with new chainspec"
         else
-            echo_info "Skipping restart. Run 'docker-compose restart nethermind' to apply changes."
+            echo_info "Skipping restart. Run 'docker compose restart nethermind' to apply changes."
         fi
     else
         echo_info "Nethermind is not running. Changes will apply on next start."

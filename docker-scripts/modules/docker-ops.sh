@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/helpers.sh"
 # Returns: 0 on success, 1 on failure
 build_images() {
     echo_info "Building Docker images..."
-    if ! docker-compose -f "$COMPOSE_FILE" build; then
+    if ! docker compose -f "$COMPOSE_FILE" build; then
         echo_error "Failed to build Docker images"
         return 1
     fi
@@ -36,18 +36,18 @@ build_images() {
 # Returns: 0 on success, 1 on failure
 start_services() {
     echo_info "Starting Veriscope services..."
-    if ! docker-compose -f "$COMPOSE_FILE" up -d; then
+    if ! docker compose -f "$COMPOSE_FILE" up -d; then
         echo_error "Failed to start services"
         return 1
     fi
-    echo_info "Services started. Use 'docker-compose -f $COMPOSE_FILE ps' to check status"
+    echo_info "Services started. Use 'docker compose -f $COMPOSE_FILE ps' to check status"
 }
 
 # Stop all services
 # Returns: 0 on success, 1 on failure
 stop_services() {
     echo_info "Stopping Veriscope services..."
-    if ! docker-compose -f "$COMPOSE_FILE" down; then
+    if ! docker compose -f "$COMPOSE_FILE" down; then
         echo_error "Failed to stop services"
         return 1
     fi
@@ -58,7 +58,7 @@ stop_services() {
 # Returns: 0 on success, 1 on failure
 restart_services() {
     echo_info "Restarting Veriscope services..."
-    if ! docker-compose -f "$COMPOSE_FILE" restart; then
+    if ! docker compose -f "$COMPOSE_FILE" restart; then
         echo_error "Failed to restart services"
         return 1
     fi
@@ -79,7 +79,7 @@ wait_for_postgres_ready() {
     echo_info "Waiting for PostgreSQL to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
+        if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U trustanchor >/dev/null 2>&1; then
             echo_info "PostgreSQL is ready"
             return 0
         fi
@@ -101,7 +101,7 @@ wait_for_redis_ready() {
     echo_info "Waiting for Redis to be ready..."
 
     while [ $elapsed -lt $timeout ]; do
-        if docker-compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+        if docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
             echo_info "Redis is ready"
             return 0
         fi
@@ -125,7 +125,7 @@ wait_for_app_ready() {
     while [ $elapsed -lt $timeout ]; do
         if is_container_running "app"; then
             # Check if artisan is accessible
-            if docker-compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
+            if docker compose -f "$COMPOSE_FILE" exec -T app php artisan --version >/dev/null 2>&1; then
                 echo_info "Laravel app is ready"
                 return 0
             fi
@@ -150,7 +150,7 @@ wait_for_ta_node_ready() {
     while [ $elapsed -lt $timeout ]; do
         if is_container_running "ta-node"; then
             # Check if node process is running
-            if docker-compose -f "$COMPOSE_FILE" exec -T ta-node sh -c "pgrep -f node" >/dev/null 2>&1; then
+            if docker compose -f "$COMPOSE_FILE" exec -T ta-node sh -c "pgrep -f node" >/dev/null 2>&1; then
                 echo_info "TA Node is ready"
                 return 0
             fi
@@ -214,12 +214,12 @@ reset_volumes() {
 
     # Stop services first
     echo_info "Stopping services..."
-    if ! docker-compose -f "$COMPOSE_FILE" down; then
+    if ! docker compose -f "$COMPOSE_FILE" down; then
         echo_warn "Failed to stop services cleanly, continuing..."
     fi
 
-    # Get the project name from docker-compose config
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    # Get the project name from docker compose config
+    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
 
     if [ -z "$project_name" ]; then
         echo_error "Failed to determine project name"
@@ -247,7 +247,7 @@ reset_volumes() {
 
     if [ $failed -gt 0 ]; then
         echo_error "$failed volume(s) could not be removed"
-        echo_info "Make sure all containers are stopped: docker-compose -f $COMPOSE_FILE down"
+        echo_info "Make sure all containers are stopped: docker compose -f $COMPOSE_FILE down"
         return 1
     fi
 
@@ -294,12 +294,12 @@ destroy_services() {
 
     echo_info "Beginning destroy sequence..."
 
-    # Get the project name from docker-compose config
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    # Get the project name from docker compose config
+    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
 
     # Stop and remove containers, networks
     echo_info "Stopping and removing containers and networks..."
-    docker-compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+    docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 
     # Handle volumes based on user selection
     case $volume_option in
@@ -371,7 +371,7 @@ destroy_services() {
 # Show service status
 show_status() {
     echo_info "Veriscope service status:"
-    docker-compose -f "$COMPOSE_FILE" ps
+    docker compose -f "$COMPOSE_FILE" ps
 }
 
 # Show logs
@@ -380,9 +380,9 @@ show_status() {
 show_logs() {
     local service=$1
     if [ -z "$service" ]; then
-        docker-compose -f "$COMPOSE_FILE" logs --tail=100 -f
+        docker compose -f "$COMPOSE_FILE" logs --tail=100 -f
     else
-        docker-compose -f "$COMPOSE_FILE" logs --tail=100 -f "$service"
+        docker compose -f "$COMPOSE_FILE" logs --tail=100 -f "$service"
     fi
 }
 
@@ -405,31 +405,31 @@ show_supervisord_logs() {
     case $log_choice in
         1)
             echo_info "Viewing supervisord main log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/supervisord.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/supervisord.log
             ;;
         2)
             echo_info "Viewing websocket log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/websocket.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/websocket.log
             ;;
         3)
             echo_info "Viewing worker log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/worker.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/worker.log
             ;;
         4)
             echo_info "Viewing horizon log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/horizon.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/horizon.log
             ;;
         5)
             echo_info "Viewing scheduler log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/scheduler.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/scheduler.log
             ;;
         6)
             echo_info "Viewing cron log..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/cron.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/cron.log
             ;;
         a)
             echo_info "Viewing all supervisord logs (combined)..."
-            docker-compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/*.log
+            docker compose -f "$COMPOSE_FILE" exec app tail -f /var/log/supervisord/*.log
             ;;
         *)
             echo_error "Invalid option"

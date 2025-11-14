@@ -20,7 +20,7 @@ source "${SCRIPT_DIR}/validators.sh"
 # Displays certificate information and expiration status
 check_certificate_expiry() {
     # Check if certbot volume exists and has certificates
-    local project_name=$(docker-compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
 
     if ! docker volume ls --format "{{.Name}}" | grep -q "${project_name}_certbot_conf"; then
         echo_info "ℹ No SSL certificates (certbot volume not found)"
@@ -39,7 +39,7 @@ check_certificate_expiry() {
     fi
 
     # Check certificate using certbot
-    local cert_info=$(docker-compose -f "$COMPOSE_FILE" run --rm --no-deps certbot certificates 2>/dev/null | grep -A 10 "Certificate Name: $service_host")
+    local cert_info=$(docker compose -f "$COMPOSE_FILE" run --rm --no-deps certbot certificates 2>/dev/null | grep -A 10 "Certificate Name: $service_host")
 
     if [ -z "$cert_info" ]; then
         echo_warn "⚠ No certificate found for $service_host"
@@ -142,7 +142,7 @@ obtain_ssl_certificate() {
 
     # Ensure nginx is running to serve ACME challenges
     echo_info "Ensuring nginx container is running..."
-    if ! docker-compose -f "$COMPOSE_FILE" up -d nginx; then
+    if ! docker compose -f "$COMPOSE_FILE" up -d nginx; then
         echo_error "Failed to start nginx container"
         return 1
     fi
@@ -154,7 +154,7 @@ obtain_ssl_certificate() {
     echo_info "Obtaining certificate for $VERISCOPE_SERVICE_HOST using Docker..."
     echo_warn "Make sure port 80 is accessible from the internet"
 
-    if ! docker-compose -f "$COMPOSE_FILE" run --rm \
+    if ! docker compose -f "$COMPOSE_FILE" run --rm \
         certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -219,7 +219,7 @@ renew_ssl_certificate() {
 
     # Ensure nginx is running for webroot challenge
     echo_info "Ensuring nginx container is running..."
-    if ! docker-compose -f "$COMPOSE_FILE" up -d nginx; then
+    if ! docker compose -f "$COMPOSE_FILE" up -d nginx; then
         echo_error "Failed to start nginx container"
         return 1
     fi
@@ -228,10 +228,10 @@ renew_ssl_certificate() {
     sleep 2
 
     # Run certbot renew via Docker (uses webroot mode)
-    if docker-compose -f "$COMPOSE_FILE" run --rm certbot renew; then
+    if docker compose -f "$COMPOSE_FILE" run --rm certbot renew; then
         echo_info "Certificates renewed successfully"
         echo_info "Reloading nginx to pick up new certificates..."
-        if ! docker-compose -f "$COMPOSE_FILE" exec nginx nginx -s reload; then
+        if ! docker compose -f "$COMPOSE_FILE" exec nginx nginx -s reload; then
             echo_warn "Failed to reload nginx - restart it manually if needed"
             return 1
         fi
@@ -277,13 +277,13 @@ setup_auto_renewal() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo_info "Restarting certbot container..."
-            docker-compose -f "$COMPOSE_FILE" --profile production restart certbot
+            docker compose -f "$COMPOSE_FILE" --profile production restart certbot
         fi
     else
         # Start certbot container with auto-renewal
         echo_info "Starting certbot container with 12-hour renewal check..."
 
-        if docker-compose -f "$COMPOSE_FILE" --profile production up -d certbot; then
+        if docker compose -f "$COMPOSE_FILE" --profile production up -d certbot; then
             echo_info "✅ Certbot auto-renewal container started successfully"
         else
             echo_error "Failed to start certbot container"
@@ -309,8 +309,8 @@ setup_auto_renewal() {
     echo_info "  - Container status: docker ps --filter name=certbot"
     echo ""
     echo_info "Manual Operations:"
-    echo_info "  - Force renewal: docker-compose run --rm certbot renew --force-renewal"
-    echo_info "  - Check expiry: docker-compose run --rm certbot certificates"
-    echo_info "  - Stop auto-renewal: docker-compose stop certbot"
+    echo_info "  - Force renewal: docker compose run --rm certbot renew --force-renewal"
+    echo_info "  - Check expiry: docker compose run --rm certbot certificates"
+    echo_info "  - Stop auto-renewal: docker compose stop certbot"
     echo ""
 }
