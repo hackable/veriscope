@@ -110,11 +110,11 @@ EOF
 
 ```bash
 # Build all Docker images
-docker-compose build
+docker compose build
 
 # Or build specific service
-docker-compose build app
-docker-compose build ta-node
+docker compose build app
+docker compose build ta-node
 ```
 
 ### 3. Initialize with Setup Script
@@ -138,13 +138,13 @@ chmod +x docker-scripts/*.sh
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Check service health
-docker-compose ps
+docker compose ps
 ```
 
 ### 5. Access the Application
@@ -278,7 +278,7 @@ Interactive menu for all common operations:
 - `stop` - Stop all services
 - `restart` - Restart all services
 - `status` - Show service status
-- `logs [service]` - Show docker-compose logs
+- `logs [service]` - Show docker compose logs
 - `supervisord-logs` - Show supervisord logs (interactive)
 
 #### Chain & Network Setup
@@ -383,79 +383,79 @@ Interactive menu for all common operations:
 
 ```bash
 # Run artisan commands
-docker-compose exec app php artisan migrate
-docker-compose exec app php artisan db:seed
-docker-compose exec app php artisan cache:clear
-docker-compose exec app php artisan config:clear
-docker-compose exec app php artisan route:list
+docker compose exec app php artisan migrate
+docker compose exec app php artisan db:seed
+docker compose exec app php artisan cache:clear
+docker compose exec app php artisan config:clear
+docker compose exec app php artisan route:list
 
 # Install/update PHP dependencies
-docker-compose exec app composer install
-docker-compose exec app composer update
+docker compose exec app composer install
+docker compose exec app composer update
 
 # Install/update frontend dependencies
-docker-compose exec app npm install
-docker-compose exec app npm run production
+docker compose exec app npm install
+docker compose exec app npm run production
 ```
 
 ### Node.js Service (ta-node)
 
 ```bash
 # View Node logs
-docker-compose logs -f ta-node
+docker compose logs -f ta-node
 
 # Install/update dependencies
-docker-compose exec ta-node npm install
+docker compose exec ta-node npm install
 
 # Restart service
-docker-compose restart ta-node
+docker compose restart ta-node
 ```
 
 ### PostgreSQL Database (postgres)
 
 ```bash
 # Access PostgreSQL CLI
-docker-compose exec postgres psql -U trustanchor -d trustanchor
+docker compose exec postgres psql -U trustanchor -d trustanchor
 
 # Backup database
-docker-compose exec postgres pg_dump -U trustanchor trustanchor > backup.sql
+docker compose exec postgres pg_dump -U trustanchor trustanchor > backup.sql
 
 # Restore database
-docker-compose exec -T postgres psql -U trustanchor trustanchor < backup.sql
+docker compose exec -T postgres psql -U trustanchor trustanchor < backup.sql
 
 # Check database size
-docker-compose exec postgres psql -U trustanchor -d trustanchor -c "SELECT pg_database_size('trustanchor');"
+docker compose exec postgres psql -U trustanchor -d trustanchor -c "SELECT pg_database_size('trustanchor');"
 ```
 
 ### Redis (redis)
 
 ```bash
 # Access Redis CLI
-docker-compose exec redis redis-cli
+docker compose exec redis redis-cli
 
 # Check Redis info
-docker-compose exec redis redis-cli INFO
+docker compose exec redis redis-cli INFO
 
 # List RedisBloom modules
-docker-compose exec redis redis-cli MODULE LIST
+docker compose exec redis redis-cli MODULE LIST
 
 # Flush all data (⚠️ destructive)
-docker-compose exec redis redis-cli FLUSHALL
+docker compose exec redis redis-cli FLUSHALL
 ```
 
 ### Nethermind (nethermind)
 
 ```bash
 # View Nethermind logs
-docker-compose logs -f nethermind
+docker compose logs -f nethermind
 
 # Check sync status
-docker-compose exec nethermind curl -X POST http://localhost:8545 \
+docker compose exec nethermind curl -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}'
 
 # Get block number
-docker-compose exec nethermind curl -X POST http://localhost:8545 \
+docker compose exec nethermind curl -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
@@ -464,13 +464,13 @@ docker-compose exec nethermind curl -X POST http://localhost:8545 \
 
 ```bash
 # Test nginx configuration
-docker-compose exec nginx nginx -t
+docker compose exec nginx nginx -t
 
 # Reload nginx (after config changes)
-docker-compose exec nginx nginx -s reload
+docker compose exec nginx nginx -s reload
 
 # View access logs
-docker-compose logs nginx | grep "GET\|POST"
+docker compose logs nginx | grep "GET\|POST"
 ```
 
 ## Volume Management
@@ -571,13 +571,13 @@ docker network inspect veriscope --format '{{range .Containers}}{{.Name}} - {{.I
 
 ```bash
 # Build app image
-docker-compose build app
+docker compose build app
 
 # Build with no cache
-docker-compose build --no-cache app
+docker compose build --no-cache app
 
 # View build logs
-docker-compose build --progress=plain app
+docker compose build --progress=plain app
 ```
 
 **PHP 8.3 Extensions Included**:
@@ -599,10 +599,10 @@ php8.3-xml       php8.3-yaml      php8.3-zip
 
 ```bash
 # Build ta-node image
-docker-compose build ta-node
+docker compose build ta-node
 
 # Build with no cache
-docker-compose build --no-cache ta-node
+docker compose build --no-cache ta-node
 ```
 
 ### Updating the Application
@@ -611,21 +611,21 @@ After pulling new code:
 
 ```bash
 # 1. Stop services
-docker-compose down
+docker compose down
 
 # 2. Rebuild images with new code
-docker-compose build
+docker compose build
 
 # 3. Start services
-docker-compose up -d
+docker compose up -d
 
 # 4. Run migrations (if needed)
-docker-compose exec app php artisan migrate
+docker compose exec app php artisan migrate
 
 # 5. Clear caches
-docker-compose exec app php artisan cache:clear
-docker-compose exec app php artisan config:clear
-docker-compose exec app php artisan view:clear
+docker compose exec app php artisan cache:clear
+docker compose exec app php artisan config:clear
+docker compose exec app php artisan view:clear
 ```
 
 ### Switching Networks
@@ -640,7 +640,7 @@ echo "VERISCOPE_TARGET=fed_testnet" > .env
 ./docker-scripts/setup-docker.sh setup-chain
 
 # 3. Restart ta-node
-docker-compose restart ta-node nethermind
+docker compose restart ta-node nethermind
 ```
 
 ## SSL/TLS Certificates
@@ -651,7 +651,7 @@ For local development, use self-signed certificates:
 
 ```bash
 # Generate self-signed certificate
-docker-compose run --rm certbot certonly --standalone \
+docker compose run --rm certbot certonly --standalone \
   --register-unsafely-without-email \
   -d localhost
 ```
@@ -663,16 +663,16 @@ For production with a real domain:
 ```bash
 # 1. Ensure domain points to your server
 # 2. Stop nginx temporarily
-docker-compose stop nginx
+docker compose stop nginx
 
 # 3. Obtain certificate
-docker-compose run --rm certbot certonly --standalone \
+docker compose run --rm certbot certonly --standalone \
   --agree-tos \
   --email your@email.com \
   -d your-domain.com
 
 # 4. Start nginx
-docker-compose start nginx
+docker compose start nginx
 ```
 
 ### Auto-Renewal (Production)
@@ -688,8 +688,8 @@ certbot:
 ### Manual Renewal
 
 ```bash
-docker-compose run --rm certbot renew
-docker-compose exec nginx nginx -s reload
+docker compose run --rm certbot renew
+docker compose exec nginx nginx -s reload
 ```
 
 ## Monitoring and Logs
@@ -698,28 +698,28 @@ docker-compose exec nginx nginx -s reload
 
 ```bash
 # All services
-docker-compose logs
+docker compose logs
 
 # Follow all logs
-docker-compose logs -f
+docker compose logs -f
 
 # Specific service
-docker-compose logs app
-docker-compose logs ta-node
-docker-compose logs postgres
+docker compose logs app
+docker compose logs ta-node
+docker compose logs postgres
 
 # Last N lines
-docker-compose logs --tail=100 app
+docker compose logs --tail=100 app
 
 # Since timestamp
-docker-compose logs --since 2024-01-01T00:00:00 app
+docker compose logs --since 2024-01-01T00:00:00 app
 ```
 
 ### Health Checks
 
 ```bash
 # Check container health
-docker-compose ps
+docker compose ps
 
 # Inspect health status
 docker inspect veriscope-app --format='{{.State.Health.Status}}'
@@ -758,71 +758,71 @@ Access Bull Arena at:
 
 ```bash
 # Check container logs
-docker-compose logs <service-name>
+docker compose logs <service-name>
 
 # Check health status
-docker-compose ps
+docker compose ps
 
 # Inspect container
 docker inspect veriscope-<service-name>
 
 # Remove and recreate
-docker-compose rm -f <service-name>
-docker-compose up -d <service-name>
+docker compose rm -f <service-name>
+docker compose up -d <service-name>
 ```
 
 ### Database Connection Issues
 
 ```bash
 # Test database connection
-docker-compose exec app php artisan tinker
+docker compose exec app php artisan tinker
 >>> DB::connection()->getPdo();
 
 # Check postgres is running
-docker-compose ps postgres
+docker compose ps postgres
 
 # Check postgres logs
-docker-compose logs postgres
+docker compose logs postgres
 
 # Verify credentials match
 grep DB_ veriscope_ta_dashboard/.env
-docker-compose exec postgres env | grep POSTGRES
+docker compose exec postgres env | grep POSTGRES
 ```
 
 ### Redis Connection Issues
 
 ```bash
 # Test Redis connection
-docker-compose exec app php artisan tinker
+docker compose exec app php artisan tinker
 >>> Redis::ping();
 
 # Test from ta-node
-docker-compose exec ta-node node -e "
+docker compose exec ta-node node -e "
 const Redis = require('ioredis');
 const redis = new Redis({host: 'redis', port: 6379});
 redis.ping().then(() => console.log('PONG')).catch(console.error);
 "
 
 # Check Redis logs
-docker-compose logs redis
+docker compose logs redis
 ```
 
 ### Nethermind Sync Issues
 
 ```bash
 # Check sync status
-docker-compose exec app php artisan nethermind:sync-status
+docker compose exec app php artisan nethermind:sync-status
 
 # View Nethermind logs
-docker-compose logs -f nethermind
+docker compose logs -f nethermind
 
 # Check peers
-docker-compose exec nethermind curl -X POST http://localhost:8545 \
+docker compose exec nethermind curl -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"net_peerCount","params":[],"id":1}'
 
 # Restart Nethermind
-docker-compose restart nethermind
+docker compose restart nethermind
 ```
 
 ### Port Conflicts
@@ -838,15 +838,15 @@ ports:
   - "8443:443"
 
 # Recreate nginx
-docker-compose up -d nginx
+docker compose up -d nginx
 ```
 
 ### Permission Issues
 
 ```bash
 # Fix Laravel storage permissions
-docker-compose exec app chmod -R 775 storage bootstrap/cache
-docker-compose exec app chown -R www-data:www-data storage bootstrap/cache
+docker compose exec app chmod -R 775 storage bootstrap/cache
+docker compose exec app chown -R www-data:www-data storage bootstrap/cache
 ```
 
 ### Out of Disk Space
@@ -868,7 +868,7 @@ docker system df -v
 # ⚠️ WARNING: This will delete ALL data
 
 # Stop and remove containers, volumes
-docker-compose down -v
+docker compose down -v
 
 # Remove images
 docker rmi $(docker images 'veriscope*' -q)
@@ -877,8 +877,8 @@ docker rmi $(docker images 'veriscope*' -q)
 docker system prune -a --volumes
 
 # Start fresh
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ./docker-scripts/setup-docker.sh
 ```
 
@@ -1045,7 +1045,7 @@ BACKUP_DIR="/backups/$(date +%Y%m%d)"
 mkdir -p $BACKUP_DIR
 
 # Database
-docker-compose exec -T postgres pg_dump -U trustanchor trustanchor > $BACKUP_DIR/database.sql
+docker compose exec -T postgres pg_dump -U trustanchor trustanchor > $BACKUP_DIR/database.sql
 
 # Volumes
 docker run --rm -v veriscope_app_storage:/data -v $BACKUP_DIR:/backup alpine \
@@ -1103,7 +1103,7 @@ find /backups -type d -mtime +7 -exec rm -rf {} \;
 For issues or questions:
 
 1. Check the Troubleshooting section
-2. Review container logs: `docker-compose logs`
-3. Check service status: `docker-compose ps`
+2. Review container logs: `docker compose logs`
+3. Check service status: `docker compose ps`
 4. Review docker-scripts/README.md for script details
 5. Consult project documentation

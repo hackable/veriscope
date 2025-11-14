@@ -22,7 +22,7 @@ The `infra-v2/` directory contains updated Ansible playbooks, CloudFormation tem
   - Built-in RedisBloom module (no manual compilation required)
   - Additional modules included: RedisJSON, RedisSearch, RedisProbabilistic
   - Simplified installation and maintenance
-  - Version-locked for consistency with docker-compose deployments
+  - Version-locked for consistency with docker compose deployments
   - Automatic fallback to latest if specific version unavailable
 
 **Implementation details**:
@@ -49,7 +49,7 @@ The `infra-v2/` directory contains updated Ansible playbooks, CloudFormation tem
 - **Benefits**:
   - Latest stable Nethermind release
   - Improved performance and bug fixes
-  - Consistent with docker-compose and scripts-v2 deployments
+  - Consistent with docker compose and scripts-v2 deployments
 
 ### 4. Nethermind v1.25.4 Configuration Template
 

@@ -12,7 +12,7 @@ if [ -z "$SERVICE" ]; then
     echo "Usage: $0 <service> [command]"
     echo ""
     echo "Available services:"
-    docker-compose -f "$COMPOSE_FILE" ps --services
+    docker compose -f "$COMPOSE_FILE" ps --services
     echo ""
     echo "Examples:"
     echo "  $0 app bash              # Open bash shell in app container"
@@ -26,16 +26,16 @@ if [ $# -eq 0 ]; then
     # No command specified, open a shell
     case "$SERVICE" in
         app)
-            docker-compose -f "$COMPOSE_FILE" exec "$SERVICE" bash
+            docker compose -f "$COMPOSE_FILE" exec "$SERVICE" bash
             ;;
         ta-node)
-            docker-compose -f "$COMPOSE_FILE" exec "$SERVICE" sh
+            docker compose -f "$COMPOSE_FILE" exec "$SERVICE" sh
             ;;
         *)
-            docker-compose -f "$COMPOSE_FILE" exec "$SERVICE" sh
+            docker compose -f "$COMPOSE_FILE" exec "$SERVICE" sh
             ;;
     esac
 else
     # Execute the specified command
-    docker-compose -f "$COMPOSE_FILE" exec "$SERVICE" "$@"
+    docker compose -f "$COMPOSE_FILE" exec "$SERVICE" "$@"
 fi
