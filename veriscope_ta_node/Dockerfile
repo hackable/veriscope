@@ -16,6 +16,9 @@ RUN npm install --production
 # Copy application code (includes .env for runtime configuration)
 COPY --chown=node:node ./veriscope_ta_node/ ./
 
+# Create logs directory with correct permissions
+RUN mkdir -p logs && chown -R node:node logs
+
 # Switch to non-root user
 USER node
 
