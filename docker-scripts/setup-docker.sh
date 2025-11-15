@@ -265,8 +265,15 @@ server {
     listen 80;
     server_name $VERISCOPE_SERVICE_HOST;
 
-    # Redirect all HTTP traffic to HTTPS
-    return 301 https://\$server_name\$request_uri;
+    # Let's Encrypt ACME challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
 }
 
 # HTTPS server
@@ -275,8 +282,8 @@ server {
     server_name $VERISCOPE_SERVICE_HOST;
 
     # SSL certificates
-    ssl_certificate /etc/nginx/ssl/cert.pem;
-    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    ssl_certificate $ssl_cert;
+    ssl_certificate_key $ssl_key;
 
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -304,19 +311,33 @@ server {
     gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
 
     # Laravel application (main site)
+    root /var/www/html/public;
+    index index.php index.html;
+
     location / {
-        proxy_pass http://app:80;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Port \$server_port;
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \\.php\$ {
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+
+        fastcgi_param HTTP_X_REAL_IP \$remote_addr;
+        fastcgi_param HTTP_X_FORWARDED_FOR \$proxy_add_x_forwarded_for;
+        fastcgi_param HTTP_X_FORWARDED_PROTO \$scheme;
+        fastcgi_param HTTP_X_FORWARDED_HOST \$host;
+        fastcgi_param HTTP_X_FORWARDED_PORT \$server_port;
 
         # Timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        fastcgi_connect_timeout 120s;
+        fastcgi_send_timeout 120s;
+        fastcgi_read_timeout 120s;
+    }
+
+    location ~ /\\.(?!well-known).* {
+        deny all;
     }
 
     # Bull Arena queue UI
@@ -326,8 +347,12 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-    }
 
+        # Timeouts
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
 
     # WebSocket key endpoint for Laravel
     location /app/websocketkey {
