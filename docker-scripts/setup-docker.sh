@@ -313,19 +313,25 @@ perform_full_install() {
     step_info "Creating veriscope_ta_node directory..."
     mkdir -p veriscope_ta_node
 
-    # Step 3: Generate credentials
+    # Step 3: Initialize dashboard environment
+    step_info "Initializing dashboard environment..."
+    if ! init_dashboard_env; then
+        abort_install "Failed to initialize dashboard environment"
+    fi
+
+    # Step 4: Generate credentials
     step_info "Generating PostgreSQL credentials..."
     if ! generate_postgres_credentials; then
         abort_install "Failed to generate credentials"
     fi
 
-    # Step 4: Build images
+    # Step 5: Build images
     step_info "Building Docker images..."
     if ! build_images; then
         abort_install "Failed to build images"
     fi
 
-    # Step 5: Create sealer keypair
+    # Step 6: Create sealer keypair
     step_info "Creating sealer keypair..."
     if ! create_sealer_keypair; then
         abort_install "Failed to create sealer keypair"

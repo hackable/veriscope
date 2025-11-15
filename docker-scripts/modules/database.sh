@@ -3,6 +3,7 @@
 # This module provides database management functions
 #
 # Functions:
+# - Environment: init_dashboard_env
 # - Credentials: generate_postgres_credentials
 # - Initialization: init_database, run_migrations, seed_database
 # - Backup/Restore: backup_database, restore_database
@@ -11,6 +12,44 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers.sh"
 source "${SCRIPT_DIR}/validators.sh"
+
+# ============================================================================
+# ENVIRONMENT INITIALIZATION
+# ============================================================================
+
+# Initialize dashboard .env file from template
+# Creates veriscope_ta_dashboard/.env from .env.example if it doesn't exist
+# Returns: 0 on success, 1 on failure
+init_dashboard_env() {
+    local dashboard_dir="veriscope_ta_dashboard"
+    local env_file="$dashboard_dir/.env"
+    local env_example="$dashboard_dir/.env.example"
+
+    echo_info "Initializing dashboard environment file..."
+
+    # Check if dashboard directory exists
+    if [ ! -d "$dashboard_dir" ]; then
+        echo_error "Dashboard directory not found: $dashboard_dir"
+        return 1
+    fi
+
+    # Check if .env.example exists
+    if [ ! -f "$env_example" ]; then
+        echo_error "Dashboard .env.example not found: $env_example"
+        return 1
+    fi
+
+    # Create .env from .env.example if it doesn't exist
+    if [ ! -f "$env_file" ]; then
+        echo_info "Creating dashboard .env from template..."
+        cp "$env_example" "$env_file"
+        echo_info "✓ Dashboard .env created from .env.example"
+    else
+        echo_info "Dashboard .env already exists"
+    fi
+
+    return 0
+}
 
 # ============================================================================
 # CREDENTIALS MANAGEMENT
