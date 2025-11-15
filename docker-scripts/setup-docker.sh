@@ -529,42 +529,35 @@ menu() {
                 exit 1
             fi
 
-            # Step 4: Setup chain config (before building images)
-            echo_info "Step 4/11: Setting up chain configuration..."
-            if ! setup_chain_config; then
-                echo_error "Failed to setup chain config - aborting installation"
-                exit 1
-            fi
-
-            # Step 5: Build images
-            echo_info "Step 5/11: Building Docker images..."
+            # Step 4: Build images
+            echo_info "Step 4/11: Building Docker images..."
             if ! build_images; then
                 echo_error "Failed to build images - aborting installation"
                 exit 1
             fi
 
-            # Step 6: Create sealer keypair
-            echo_info "Step 6/11: Creating sealer keypair..."
+            # Step 5: Create sealer keypair
+            echo_info "Step 5/11: Creating sealer keypair..."
             if ! create_sealer_keypair; then
                 echo_error "Failed to create sealer keypair - aborting installation"
                 exit 1
             fi
 
-            # Step 7: SSL certificate (optional - may fail in dev mode)
-            echo_info "Step 7/11: Obtaining SSL certificate..."
+            # Step 6: SSL certificate (optional - may fail in dev mode)
+            echo_info "Step 6/11: Obtaining SSL certificate..."
             if ! obtain_ssl_certificate; then
                 echo_warn "SSL certificate setup skipped or failed (continuing...)"
             fi
 
-            # Step 8: Setup nginx config
-            echo_info "Step 8/11: Setting up Nginx configuration..."
+            # Step 7: Setup nginx config
+            echo_info "Step 7/11: Setting up Nginx configuration..."
             if ! setup_nginx_config; then
                 echo_error "Failed to setup Nginx config - aborting installation"
                 exit 1
             fi
 
-            # Step 9: Reset volumes to ensure clean state with new credentials
-            echo_info "Step 9/11: Resetting database and cache volumes..."
+            # Step 8: Reset volumes to ensure clean state with new credentials
+            echo_info "Step 8/11: Resetting database and cache volumes..."
             if ! stop_services; then
                 echo_warn "Failed to stop services cleanly - continuing..."
             fi
@@ -591,6 +584,13 @@ menu() {
                 fi
             done
             echo_info "Removed $removed volume(s) (Nethermind data preserved)"
+
+            # Step 9: Setup chain config (after resetting volumes)
+            echo_info "Step 9/11: Setting up chain configuration..."
+            if ! setup_chain_config; then
+                echo_error "Failed to setup chain config - aborting installation"
+                exit 1
+            fi
 
             # Step 10: Start services and wait for readiness
             echo_info "Step 10/11: Starting services..."
@@ -892,7 +892,6 @@ else
             mkdir -p veriscope_ta_node
 
             generate_postgres_credentials
-            setup_chain_config
             build_images
             create_sealer_keypair
 
@@ -909,6 +908,10 @@ else
             docker volume rm "${project_name}_app_data" 2>/dev/null || true
             docker volume rm "${project_name}_artifacts" 2>/dev/null || true
             echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
+
+            # Setup chain config AFTER resetting volumes
+            echo_info "Setting up chain configuration..."
+            setup_chain_config
 
             start_services
             sleep 15
