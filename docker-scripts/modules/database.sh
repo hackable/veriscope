@@ -167,6 +167,13 @@ POSTGRES_DB=$pgdb" "$env_file"
         portable_sed 's|^PUSHER_APP_HOST=127\.0\.0\.1|PUSHER_APP_HOST=app|g' "$laravel_env"
         portable_sed 's|^PUSHER_APP_HOST=localhost|PUSHER_APP_HOST=app|g' "$laravel_env"
 
+        # Ensure PUSHER_APP_PORT is set (required for laravel-websockets)
+        if ! grep -q "^PUSHER_APP_PORT=" "$laravel_env"; then
+            portable_sed "/^PUSHER_APP_HOST=/a\\
+PUSHER_APP_PORT=6001" "$laravel_env"
+            echo_info "Added PUSHER_APP_PORT=6001 to Laravel .env"
+        fi
+
         # TA Node API URLs (Docker service names)
         portable_sed 's|^HTTP_API_URL=http://localhost:8080|HTTP_API_URL=http://ta-node:8080|g' "$laravel_env"
         portable_sed 's|^SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090|SHYFT_TEMPLATE_HELPER_URL=http://ta-node:8090|g' "$laravel_env"
