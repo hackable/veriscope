@@ -260,8 +260,8 @@ check_docker() {
 # Offers to install missing dependencies automatically
 # Returns: 0 if all installed, 1 if missing or installation declined
 check_host_dependencies() {
-    local required_tools=("jq" "unzip" "make" "ntpdate" "sponge")
-    local tool_descriptions=("JSON processor" "Archive utility" "Build tool" "Time sync utility" "Moreutils (sponge)")
+    local required_tools=("jq")
+    local tool_descriptions=("JSON processor for docker compose config parsing")
     local missing_tools=()
 
     for i in "${!required_tools[@]}"; do
@@ -274,42 +274,42 @@ check_host_dependencies() {
     done
 
     if [ ${#missing_tools[@]} -gt 0 ]; then
-        echo_warn "Missing required host dependencies:"
+        echo_warn "Missing required host dependency:"
         for tool in "${missing_tools[@]}"; do
-            echo "  - $tool"
+            echo "  - $tool (${tool_descriptions[0]})"
         done
         echo ""
 
         # Offer to install automatically
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            echo_info "Install command: brew install jq unzip make moreutils"
+            echo_info "Install command: brew install jq"
             echo ""
-            read -p "Do you want to install these dependencies now? (Y/n): " -n 1 -r
+            read -p "Do you want to install jq now? (Y/n): " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                echo_info "Installing dependencies via Homebrew..."
-                if brew install jq unzip make moreutils; then
-                    echo_info "✓ Dependencies installed successfully"
+                echo_info "Installing jq via Homebrew..."
+                if brew install jq; then
+                    echo_info "✓ jq installed successfully"
                     return 0
                 else
-                    echo_error "Failed to install dependencies"
-                    echo_info "Please install manually: brew install jq unzip make moreutils"
+                    echo_error "Failed to install jq"
+                    echo_info "Please install manually: brew install jq"
                     return 1
                 fi
             fi
         else
-            echo_info "Install command: sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+            echo_info "Install command: sudo apt-get update && sudo apt-get install -y jq"
             echo ""
-            read -p "Do you want to install these dependencies now? (Y/n): " -n 1 -r
+            read -p "Do you want to install jq now? (Y/n): " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                echo_info "Installing dependencies via apt-get..."
-                if sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils; then
-                    echo_info "✓ Dependencies installed successfully"
+                echo_info "Installing jq via apt-get..."
+                if sudo apt-get update && sudo apt-get install -y jq; then
+                    echo_info "✓ jq installed successfully"
                     return 0
                 else
-                    echo_error "Failed to install dependencies"
-                    echo_info "Please install manually: sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+                    echo_error "Failed to install jq"
+                    echo_info "Please install manually: sudo apt-get update && sudo apt-get install -y jq"
                     return 1
                 fi
             fi
@@ -448,12 +448,12 @@ preflight_checks() {
 
     # 1. Check Host Dependencies
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "1. Host Dependencies"
+    echo "1. Host Dependencies (jq)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if check_host_dependencies; then
-        echo_info "✓ All host dependencies are installed"
+        echo_info "✓ jq is installed"
     else
-        echo_warn "⚠ Some host dependencies are missing"
+        echo_warn "⚠ jq is missing"
         all_checks_passed=false
     fi
     echo ""
