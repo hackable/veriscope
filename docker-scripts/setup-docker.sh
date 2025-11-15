@@ -21,6 +21,23 @@ VERISCOPE_SERVICE_HOST="${VERISCOPE_SERVICE_HOST:=unset}"
 VERISCOPE_COMMON_NAME="${VERISCOPE_COMMON_NAME:=unset}"
 VERISCOPE_TARGET="${VERISCOPE_TARGET:=unset}"
 
+# Constants
+readonly CONTAINER_NGINX="veriscope-nginx"
+readonly CONTAINER_TUNNEL="veriscope-tunnel"
+readonly CONTAINER_POSTGRES="veriscope-postgres"
+readonly CONTAINER_REDIS="veriscope-redis"
+readonly CONTAINER_NETHERMIND="veriscope-nethermind"
+readonly CONTAINER_APP="veriscope-app"
+readonly CONTAINER_TA_NODE="veriscope-ta-node"
+readonly CONTAINER_CERTBOT="veriscope-certbot"
+
+readonly RESETTABLE_VOLUMES="postgres_data redis_data app_data artifacts"
+readonly ALL_VOLUMES="postgres_data redis_data app_data artifacts nethermind_data certbot_conf certbot_www"
+
+readonly TUNNEL_STARTUP_WAIT=5
+readonly SERVICE_STARTUP_WAIT=15
+readonly SERVICE_READY_TIMEOUT=120
+
 # Load .env file if it exists to override defaults
 if [ -f ".env" ]; then
     set -o allexport
@@ -69,11 +86,7 @@ check_env() {
     fi
 
     # Reload .env file to get latest values
-    if [ -f ".env" ]; then
-        set -o allexport
-        source .env
-        set +o allexport
-    fi
+    load_env_file ".env"
 
     # Validate required environment variables
     if ! validate_env_vars; then
@@ -103,14 +116,14 @@ tunnel_start() {
     fi
 
     # Check if tunnel is already running
-    if docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
-        echo -e "${YELLOW}[WARNING]${NC} Ngrok tunnel is already running"
+    if is_named_container_running "$CONTAINER_TUNNEL"; then
+        echo_warn "Ngrok tunnel is already running"
         tunnel_url
         return
     fi
 
     # Check if nginx is running (required for tunnel)
-    if ! docker ps --filter "name=veriscope-nginx" --filter "status=running" --format "{{.Names}}" | grep -q "veriscope-nginx"; then
+    if ! is_named_container_running "$CONTAINER_NGINX" "running"; then
         echo_error "Nginx is not running. Please start the main services first with: $0 start"
         return 1
     fi
@@ -119,7 +132,7 @@ tunnel_start() {
     docker compose --profile tunnel up -d --no-deps tunnel
 
     echo_info "Waiting for tunnel to establish connection..."
-    sleep 5
+    sleep $TUNNEL_STARTUP_WAIT
 
     tunnel_url
 }
@@ -134,7 +147,7 @@ tunnel_stop() {
 
 # Get tunnel URL
 tunnel_url() {
-    if ! docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
+    if ! is_named_container_running "$CONTAINER_TUNNEL"; then
         echo_error "Ngrok tunnel is not running. Start it with: $0 tunnel-start"
         return 1
     fi
@@ -166,7 +179,7 @@ tunnel_url() {
 
 # View tunnel logs
 tunnel_logs() {
-    if ! docker ps --filter "name=veriscope-tunnel" --format "{{.Names}}" | grep -q "veriscope-tunnel"; then
+    if ! is_named_container_running "$CONTAINER_TUNNEL"; then
         echo_error "Ngrok tunnel is not running. Start it with: $0 tunnel-start"
         return 1
     fi
@@ -197,7 +210,7 @@ setup_nginx_config() {
         return 1
     fi
 
-    source .env
+    load_env_file ".env"
 
     if [ -z "$VERISCOPE_SERVICE_HOST" ] || [ "$VERISCOPE_SERVICE_HOST" = "unset" ]; then
         echo_error "VERISCOPE_SERVICE_HOST not set in .env"
@@ -215,8 +228,7 @@ setup_nginx_config() {
 
     if [ $cert_check_result -ne 0 ]; then
         echo_info "SSL certificates not found - Nginx will run in HTTP-only mode"
-        echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST"
-        echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
+        show_service_urls "$VERISCOPE_SERVICE_HOST" "configured"
         echo_info ""
         echo_info "To enable HTTPS, run: ./docker-scripts/setup-docker.sh obtain-ssl"
     else
@@ -232,15 +244,7 @@ setup_nginx_config() {
         echo_info ""
 
         # Display appropriate URLs based on certificate availability
-        if [ $cert_check_result -eq 0 ]; then
-            echo_info "Your services are now available at:"
-            echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST (HTTPS)"
-            echo_info "  Arena:   https://$VERISCOPE_SERVICE_HOST/arena"
-        else
-            echo_info "Your services are now available at:"
-            echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST (HTTP only)"
-            echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
-        fi
+        show_service_urls "$VERISCOPE_SERVICE_HOST" "available"
     else
         echo_warn "Failed to restart nginx. Restart manually with:"
         echo_warn "  docker compose -f $COMPOSE_FILE restart nginx"
@@ -383,19 +387,15 @@ menu() {
 
             # Check host dependencies first
             if ! check_host_dependencies; then
-                echo_error "Host dependencies check failed - aborting installation"
-                echo_info "Please install missing dependencies and try again"
-                exit 1
+                abort_install "Host dependencies check failed" "Please install missing dependencies and try again"
             fi
 
             if ! check_docker; then
-                echo_error "Docker check failed - aborting installation"
-                exit 1
+                abort_install "Docker check failed"
             fi
 
             if ! check_env; then
-                echo_error "Environment check failed - aborting installation"
-                exit 1
+                abort_install "Environment check failed"
             fi
 
             # Step 2: Ensure directory exists before setup_chain_config
@@ -405,22 +405,19 @@ menu() {
             # Step 3: Generate credentials
             echo_info "Step 3/11: Generating PostgreSQL credentials..."
             if ! generate_postgres_credentials; then
-                echo_error "Failed to generate credentials - aborting installation"
-                exit 1
+                abort_install "Failed to generate credentials"
             fi
 
             # Step 4: Build images
             echo_info "Step 4/11: Building Docker images..."
             if ! build_images; then
-                echo_error "Failed to build images - aborting installation"
-                exit 1
+                abort_install "Failed to build images"
             fi
 
             # Step 5: Create sealer keypair
             echo_info "Step 5/11: Creating sealer keypair..."
             if ! create_sealer_keypair; then
-                echo_error "Failed to create sealer keypair - aborting installation"
-                exit 1
+                abort_install "Failed to create sealer keypair"
             fi
 
             # Step 6: SSL certificate (optional - may fail in dev mode)
@@ -432,8 +429,7 @@ menu() {
             # Step 7: Setup nginx config
             echo_info "Step 7/11: Setting up Nginx configuration..."
             if ! setup_nginx_config; then
-                echo_error "Failed to setup Nginx config - aborting installation"
-                exit 1
+                abort_install "Failed to setup Nginx config"
             fi
 
             # Step 8: Reset volumes to ensure clean state with new credentials
@@ -446,40 +442,34 @@ menu() {
             project_name=$(get_project_name)
 
             if [ -z "$project_name" ]; then
-                echo_error "Failed to determine project name - aborting installation"
-                exit 1
+                abort_install "Failed to determine project name"
             fi
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            remove_data_volumes "$project_name" "postgres_data redis_data app_data artifacts" true
+            remove_data_volumes "$project_name" "$RESETTABLE_VOLUMES" true
             echo_info "Data volumes removed (Nethermind data preserved)"
 
             # Step 9: Setup chain config (after resetting volumes)
             echo_info "Step 9/11: Setting up chain configuration..."
             if ! setup_chain_config; then
-                echo_error "Failed to setup chain config - aborting installation"
-                exit 1
+                abort_install "Failed to setup chain config"
             fi
 
             # Step 10: Start services and wait for readiness
             echo_info "Step 10/11: Starting services..."
             if ! start_services; then
-                echo_error "Failed to start services - aborting installation"
-                exit 1
+                abort_install "Failed to start services"
             fi
 
             echo_info "Waiting for services to be ready..."
-            if ! wait_for_services_ready 120; then
-                echo_error "Services failed to become ready - aborting installation"
-                echo_info "Check service logs: docker compose -f $COMPOSE_FILE logs"
-                exit 1
+            if ! wait_for_services_ready $SERVICE_READY_TIMEOUT; then
+                abort_install "Services failed to become ready" "Check service logs: docker compose -f $COMPOSE_FILE logs"
             fi
 
             # Step 11: Laravel setup
             echo_info "Step 11/11: Running Laravel setup..."
             if ! full_laravel_setup; then
-                echo_error "Laravel setup failed - aborting installation"
-                exit 1
+                abort_install "Laravel setup failed"
             fi
 
             # Install additional components
@@ -513,15 +503,8 @@ menu() {
             # Get service host from .env
             local service_host=$(get_env_var "VERISCOPE_SERVICE_HOST" "localhost" true)
 
-            # Detect SSL certificates to show correct protocol
-            local protocol="http"
-            if check_ssl_cert_exists "$service_host" false; then
-                protocol="https"
-            fi
-
-            echo_info "Access your Veriscope instance at:"
-            echo_info "  - Dashboard: ${protocol}://${service_host}"
-            echo_info "  - Arena: ${protocol}://${service_host}/arena"
+            # Show service URLs
+            show_service_urls "$service_host" "access"
             echo ""
             ;;
         s)
@@ -744,9 +727,7 @@ else
         full-install)
             # Check host dependencies first
             if ! check_host_dependencies; then
-                echo_error "Host dependencies check failed - aborting installation"
-                echo_info "Please install missing dependencies and try again"
-                exit 1
+                abort_install "Host dependencies check failed" "Please install missing dependencies and try again"
             fi
 
             check_docker
@@ -777,7 +758,7 @@ else
             project_name=$(get_project_name)
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            remove_data_volumes "$project_name" "postgres_data redis_data app_data artifacts" false
+            remove_data_volumes "$project_name" "$RESETTABLE_VOLUMES" false
             echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
 
             # Setup chain config AFTER resetting volumes
@@ -785,7 +766,7 @@ else
             setup_chain_config
 
             start_services
-            sleep 15
+            sleep $SERVICE_STARTUP_WAIT
             full_laravel_setup
             install_horizon
             install_passport_env
