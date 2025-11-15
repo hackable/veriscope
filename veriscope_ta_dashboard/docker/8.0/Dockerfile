@@ -56,7 +56,7 @@ RUN apt-get update \
 RUN setcap "cap_net_bind_service=+ep" /usr/bin/php8.3
 
 # Setup ntpdate cronjob for time synchronization
-COPY ./scripts/ntpdate /etc/cron.daily/ntpdate
+COPY ./veriscope_ta_dashboard/docker/8.0/ntpdate /etc/cron.daily/ntpdate
 RUN chmod +x /etc/cron.daily/ntpdate
 
 RUN groupadd --force -g $WWWGROUP serviceuser
