@@ -437,6 +437,7 @@ menu() {
 
     case $choice in
         1)
+            check_host_dependencies
             check_docker
             check_env
             preflight_checks
@@ -499,6 +500,14 @@ menu() {
 
             # Step 1: Pre-flight checks
             echo_info "Step 1/11: Running pre-flight checks..."
+
+            # Check host dependencies first
+            if ! check_host_dependencies; then
+                echo_error "Host dependencies check failed - aborting installation"
+                echo_info "Please install missing dependencies and try again"
+                exit 1
+            fi
+
             if ! check_docker; then
                 echo_error "Docker check failed - aborting installation"
                 exit 1
@@ -749,6 +758,7 @@ else
     # Command line mode
     case "$1" in
         check)
+            check_host_dependencies
             check_docker
             check_env
             ;;
@@ -867,6 +877,13 @@ else
             regenerate_encrypt_secret
             ;;
         full-install)
+            # Check host dependencies first
+            if ! check_host_dependencies; then
+                echo_error "Host dependencies check failed - aborting installation"
+                echo_info "Please install missing dependencies and try again"
+                exit 1
+            fi
+
             check_docker
             check_env
 
