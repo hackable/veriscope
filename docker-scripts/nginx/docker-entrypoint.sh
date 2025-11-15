@@ -9,6 +9,11 @@ DOMAIN="${VERISCOPE_SERVICE_HOST:-localhost}"
 SSL_CERT="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
 SSL_KEY="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
 
+# Export variables so envsubst can access them
+export NGINX_HOST="${DOMAIN}"
+export SSL_CERT
+export SSL_KEY
+
 echo "Checking for SSL certificates..."
 echo "  Domain: ${DOMAIN}"
 echo "  Certificate: ${SSL_CERT}"
