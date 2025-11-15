@@ -121,23 +121,24 @@ obtain_ssl_certificate() {
         return 1
     fi
 
-    # Check if in development mode (inform but don't block if they have a real domain)
+    # Always prompt user during installation (both dev and production)
+    echo_info "SSL Certificate Setup"
+    echo_info "Domain: $VERISCOPE_SERVICE_HOST"
+    echo ""
+
     if is_dev_mode; then
-        echo_warn "Development mode detected!"
-        echo_info "Current settings:"
-        echo "  - Compose file: $COMPOSE_FILE"
-        echo "  - Host: $VERISCOPE_SERVICE_HOST"
-        echo "  - APP_ENV: ${APP_ENV:-not set}"
-        echo ""
-        echo_warn "SSL certificates are typically not needed in development."
-        echo_info "However, you have a valid domain configured."
-        echo ""
-        read -p "Do you want to obtain an SSL certificate for $VERISCOPE_SERVICE_HOST? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo_info "Skipping SSL certificate setup."
-            return 0
-        fi
+        echo_warn "Development mode detected - SSL is optional"
+    else
+        echo_info "Production mode - SSL is recommended but optional"
+    fi
+
+    echo ""
+    read -p "Do you want to obtain an SSL certificate for $VERISCOPE_SERVICE_HOST? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo_info "Skipping SSL certificate setup."
+        echo_info "You can obtain SSL certificates later with: ./docker-scripts/setup-docker.sh obtain-ssl"
+        return 0
     fi
 
     # Ensure nginx is running to serve ACME challenges
