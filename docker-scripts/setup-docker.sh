@@ -208,9 +208,12 @@ setup_nginx_config() {
     local ssl_cert="${SSL_CERT_PATH:-/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem}"
     local ssl_key="${SSL_KEY_PATH:-/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem}"
 
-    # Verify SSL certificates exist
-    if [ ! -f "$ssl_cert" ] || [ ! -f "$ssl_key" ]; then
-        echo_warn "SSL certificates not found at:"
+    # Verify SSL certificates exist in certbot Docker volume (not host filesystem)
+    local cert_check_result=0
+    docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert' && test -f '$ssl_key'" 2>/dev/null || cert_check_result=$?
+
+    if [ $cert_check_result -ne 0 ]; then
+        echo_warn "SSL certificates not found in certbot volume at:"
         echo_warn "  Certificate: $ssl_cert"
         echo_warn "  Key: $ssl_key"
 
