@@ -47,6 +47,14 @@ start_services() {
 # Returns: 0 on success, 1 on failure
 stop_services() {
     echo_info "Stopping Veriscope services..."
+
+    # Stop certbot auto-renewal container (production profile)
+    docker compose -f "$COMPOSE_FILE" --profile production stop certbot 2>/dev/null || true
+    docker compose -f "$COMPOSE_FILE" --profile production rm -f certbot 2>/dev/null || true
+
+    # Clean up any certbot-run containers from manual operations
+    docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
+
     if ! docker compose -f "$COMPOSE_FILE" down; then
         echo_error "Failed to stop services"
         return 1
