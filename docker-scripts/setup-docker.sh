@@ -525,9 +525,21 @@ menu() {
             local service_host=$(grep "^VERISCOPE_SERVICE_HOST=" .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "localhost")
             service_host=${service_host:-localhost}
 
+            # Detect SSL certificates to show correct protocol
+            local ssl_cert="/etc/letsencrypt/live/${service_host}/fullchain.pem"
+            local protocol="http"
+            local cert_check_result=1
+
+            # Check if SSL certificates exist in the certbot volume
+            docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert'" 2>/dev/null && cert_check_result=0
+
+            if [ $cert_check_result -eq 0 ]; then
+                protocol="https"
+            fi
+
             echo_info "Access your Veriscope instance at:"
-            echo_info "  - Dashboard: http://${service_host}"
-            echo_info "  - Arena: http://${service_host}/arena"
+            echo_info "  - Dashboard: ${protocol}://${service_host}"
+            echo_info "  - Arena: ${protocol}://${service_host}/arena"
             echo ""
             ;;
         s)
