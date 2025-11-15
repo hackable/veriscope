@@ -257,7 +257,8 @@ check_docker() {
 }
 
 # Check if required host dependencies are installed
-# Returns: 0 if all installed, 1 if missing (warns but doesn't exit)
+# Offers to install missing dependencies automatically
+# Returns: 0 if all installed, 1 if missing or installation declined
 check_host_dependencies() {
     local required_tools=("jq" "unzip" "make" "ntpdate" "sponge")
     local tool_descriptions=("JSON processor" "Archive utility" "Build tool" "Time sync utility" "Moreutils (sponge)")
@@ -278,17 +279,48 @@ check_host_dependencies() {
             echo "  - $tool"
         done
         echo ""
-        echo_info "Install missing dependencies:"
+
+        # Offer to install automatically
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            echo "  brew install jq unzip make moreutils"
+            echo_info "Install command: brew install jq unzip make moreutils"
+            echo ""
+            read -p "Do you want to install these dependencies now? (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo_info "Installing dependencies via Homebrew..."
+                if brew install jq unzip make moreutils; then
+                    echo_info "✓ Dependencies installed successfully"
+                    return 0
+                else
+                    echo_error "Failed to install dependencies"
+                    echo_info "Please install manually: brew install jq unzip make moreutils"
+                    return 1
+                fi
+            fi
         else
-            echo "  sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+            echo_info "Install command: sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+            echo ""
+            read -p "Do you want to install these dependencies now? (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo_info "Installing dependencies via apt-get..."
+                if sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils; then
+                    echo_info "✓ Dependencies installed successfully"
+                    return 0
+                else
+                    echo_error "Failed to install dependencies"
+                    echo_info "Please install manually: sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+                    return 1
+                fi
+            fi
         fi
-        echo ""
+
+        echo_info "Skipping dependency installation"
+        echo_info "Please install manually and try again"
         return 1
     fi
 
-    echo_info "All host dependencies installed"
+    echo_info "✓ All host dependencies installed"
     return 0
 }
 
