@@ -270,7 +270,17 @@ setup_chain_config() {
         if [ -f "$chain_dir/ta-node-env" ]; then
             echo_info "Creating veriscope_ta_node/.env from chain template..."
             mkdir -p veriscope_ta_node
-            cp "$chain_dir/ta-node-env" veriscope_ta_node/.env
+
+            if ! cp "$chain_dir/ta-node-env" veriscope_ta_node/.env; then
+                echo_error "Failed to copy ta-node-env template"
+                return 1
+            fi
+
+            # Verify the file was created
+            if [ ! -f "veriscope_ta_node/.env" ]; then
+                echo_error "Failed to create veriscope_ta_node/.env"
+                return 1
+            fi
 
             # Update localhost URLs to Docker service names on host
             echo_info "Updating .env for Docker networking on host..."
@@ -284,6 +294,7 @@ setup_chain_config() {
             echo_warn "Remember to run 'create-sealer' to generate Trust Anchor keypair"
         else
             echo_warn "No ta-node-env template found in $chain_dir"
+            echo_info "Checked: $chain_dir/ta-node-env"
         fi
     else
         echo_info "veriscope_ta_node/.env already exists (not overwriting)"

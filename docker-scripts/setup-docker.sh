@@ -902,6 +902,11 @@ else
             fi
             echo ""
 
+            # Ensure veriscope_ta_node directory exists before setup_chain_config
+            # Otherwise setup_chain_config will fail when trying to copy .env template
+            echo_info "Creating veriscope_ta_node directory..."
+            mkdir -p veriscope_ta_node
+
             generate_postgres_credentials
             setup_chain_config
             build_images
