@@ -141,6 +141,10 @@ obtain_ssl_certificate() {
         return 0
     fi
 
+    # Clean up any stuck certbot containers first
+    echo_info "Cleaning up any existing certbot containers..."
+    docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
+
     # Ensure nginx is running to serve ACME challenges
     echo_info "Ensuring nginx container is running..."
     if ! docker compose -f "$COMPOSE_FILE" up -d nginx; then
@@ -169,8 +173,14 @@ obtain_ssl_certificate() {
         echo "  1. Port 80 is open and accessible"
         echo "  2. Domain $VERISCOPE_SERVICE_HOST points to this server"
         echo "  3. No other web server is using port 80"
+
+        # Clean up any containers that might have been left
+        docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
         return 1
     fi
+
+    # Clean up any containers that might have been left
+    docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
 
     echo_info "Certificate obtained successfully"
 
@@ -218,6 +228,10 @@ renew_ssl_certificate() {
         return 0
     fi
 
+    # Clean up any stuck certbot containers first
+    echo_info "Cleaning up any existing certbot containers..."
+    docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
+
     # Ensure nginx is running for webroot challenge
     echo_info "Ensuring nginx container is running..."
     if ! docker compose -f "$COMPOSE_FILE" up -d nginx; then
@@ -234,13 +248,22 @@ renew_ssl_certificate() {
         echo_info "Reloading nginx to pick up new certificates..."
         if ! docker compose -f "$COMPOSE_FILE" exec nginx nginx -s reload; then
             echo_warn "Failed to reload nginx - restart it manually if needed"
+
+            # Clean up any containers that might have been left
+            docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
             return 1
         fi
     else
         echo_warn "Certificate renewal failed or certificates not due for renewal"
         echo_info "Certificates are typically renewed when they have 30 days or less remaining"
+
+        # Clean up any containers that might have been left
+        docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
         return 1
     fi
+
+    # Clean up any containers that might have been left
+    docker ps -a --filter "name=certbot-run" --format "{{.Names}}" | xargs -r docker rm -f 2>/dev/null || true
 }
 
 # ============================================================================
