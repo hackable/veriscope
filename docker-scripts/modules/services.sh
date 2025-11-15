@@ -49,6 +49,11 @@ full_laravel_setup() {
     echo_info "Installing Passport..."
     docker compose -f "$COMPOSE_FILE" exec app php artisan passport:install --force
 
+    # Fix OAuth key permissions (passport:install creates them as root)
+    echo_info "Fixing OAuth key permissions..."
+    docker compose -f "$COMPOSE_FILE" exec app chown serviceuser:serviceuser /var/www/html/storage/oauth-private.key /var/www/html/storage/oauth-public.key 2>/dev/null || true
+    docker compose -f "$COMPOSE_FILE" exec app chmod 600 /var/www/html/storage/oauth-private.key /var/www/html/storage/oauth-public.key 2>/dev/null || true
+
     echo_info "Generating encryption key..."
     # Check if encryption keys already exist by looking for ENCRYPTION_KEY in .env
     if docker compose -f "$COMPOSE_FILE" exec -T app grep -q "^ENCRYPTION_KEY=" .env 2>/dev/null; then
