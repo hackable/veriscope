@@ -259,10 +259,17 @@ setup_chain_config() {
         echo_warn "No artifacts directory found in $chain_dir"
     fi
 
-    # Copy ta-node-env if veriscope_ta_node/.env doesn't exist
-    if [ ! -f "veriscope_ta_node/.env" ]; then
+    # Copy ta-node-env if veriscope_ta_node/.env doesn't exist or is a directory
+    # Remove if it exists as a directory (Docker creates this if file doesn't exist before mount)
+    if [ -d "veriscope_ta_node/.env" ]; then
+        echo_warn "Found .env as a directory instead of file, removing..."
+        rm -rf "veriscope_ta_node/.env"
+    fi
+
+    if [ ! -f "veriscope_ta_node/.env" ] || [ ! -s "veriscope_ta_node/.env" ]; then
         if [ -f "$chain_dir/ta-node-env" ]; then
             echo_info "Creating veriscope_ta_node/.env from chain template..."
+            mkdir -p veriscope_ta_node
             cp "$chain_dir/ta-node-env" veriscope_ta_node/.env
 
             # Update localhost URLs to Docker service names on host
