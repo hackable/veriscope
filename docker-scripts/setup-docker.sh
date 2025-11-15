@@ -356,18 +356,29 @@ server {
 EOF
 
     echo_info "SSL configuration created: docker-scripts/nginx/nginx-ssl.conf"
-    echo_info ""
-    echo_info "To enable SSL, update docker-compose.yml nginx volumes to:"
-    echo_info "  - ./docker-scripts/nginx/nginx-ssl.conf:/etc/nginx/conf.d/default.conf:ro"
-    echo_info "  - $ssl_cert:/etc/nginx/ssl/cert.pem:ro"
-    echo_info "  - $ssl_key:/etc/nginx/ssl/key.pem:ro"
-    echo_info ""
-    echo_info "Then restart nginx:"
-    echo_info "  docker compose -f $COMPOSE_FILE restart nginx"
-    echo_info ""
-    echo_info "Your services will be available at:"
-    echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST"
-    echo_info "  Arena:   https://$VERISCOPE_SERVICE_HOST/arena"
+
+    # Update .env to use SSL nginx config
+    if grep -q "^NGINX_CONFIG=" .env 2>/dev/null; then
+        portable_sed "s/^NGINX_CONFIG=.*/NGINX_CONFIG=nginx-ssl.conf/" .env
+    else
+        echo "" >> .env
+        echo "# Nginx Configuration" >> .env
+        echo "NGINX_CONFIG=nginx-ssl.conf" >> .env
+    fi
+    echo_info "Updated .env to use SSL configuration"
+
+    # Restart nginx to apply SSL config
+    echo_info "Restarting nginx to enable HTTPS..."
+    if docker compose -f "$COMPOSE_FILE" restart nginx; then
+        echo_info "✓ Nginx restarted successfully"
+        echo_info ""
+        echo_info "Your services are now available at:"
+        echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST"
+        echo_info "  Arena:   https://$VERISCOPE_SERVICE_HOST/arena"
+    else
+        echo_warn "Failed to restart nginx. Restart manually with:"
+        echo_warn "  docker compose -f $COMPOSE_FILE restart nginx"
+    fi
 }
 menu() {
     echo ""
