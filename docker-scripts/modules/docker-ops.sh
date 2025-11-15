@@ -17,14 +17,22 @@ source "${SCRIPT_DIR}/helpers.sh"
 # BUILD AND IMAGE MANAGEMENT
 # ============================================================================
 
-# Build Docker images
+# Build Docker images using cache
+# Only rebuilds layers that have changed
 # Returns: 0 on success, 1 on failure
 build_images() {
-    echo_info "Building Docker images..."
-    if ! docker compose -f "$COMPOSE_FILE" build; then
+    echo_info "Building Docker images (using cache for efficiency)..."
+
+    # Use --pull to get latest base images but leverage cache for unchanged layers
+    # This means:
+    # - If nothing changed in your code: instant (uses cache)
+    # - If only app code changed: only rebuilds from that layer onwards
+    # - If dependencies changed: rebuilds from dependency layer onwards
+    if ! docker compose -f "$COMPOSE_FILE" build --pull; then
         echo_error "Failed to build Docker images"
         return 1
     fi
+
     echo_info "Docker images built successfully"
 }
 

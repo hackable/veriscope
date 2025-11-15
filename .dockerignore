@@ -33,6 +33,9 @@ Thumbs.db
 veriscope_ta_dashboard/node_modules
 veriscope_ta_dashboard/vendor
 veriscope_ta_dashboard/storage/logs/*.log
+veriscope_ta_dashboard/storage/framework/cache/**
+veriscope_ta_dashboard/storage/framework/sessions/**
+veriscope_ta_dashboard/storage/framework/views/**
 veriscope_ta_dashboard/.env.backup
 veriscope_ta_dashboard/.env.bak
 
@@ -40,11 +43,15 @@ veriscope_ta_dashboard/.env.bak
 veriscope_ta_node/node_modules
 veriscope_ta_node/.env.backup
 veriscope_ta_node/.env.bak
+veriscope_ta_node/logs
 
 # Infrastructure
 infra/
 terraform/
 chains/
+docker-scripts/
+scripts/
+scripts-v2/
 
 # Build artifacts
 *.tar.gz
