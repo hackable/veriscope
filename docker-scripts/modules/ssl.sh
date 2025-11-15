@@ -160,6 +160,7 @@ obtain_ssl_certificate() {
     echo_warn "Make sure port 80 is accessible from the internet"
 
     if ! docker compose -f "$COMPOSE_FILE" run --rm \
+        --entrypoint certbot \
         certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -243,7 +244,7 @@ renew_ssl_certificate() {
     sleep 2
 
     # Run certbot renew via Docker (uses webroot mode)
-    if docker compose -f "$COMPOSE_FILE" run --rm certbot renew; then
+    if docker compose -f "$COMPOSE_FILE" run --rm --entrypoint certbot certbot renew; then
         echo_info "Certificates renewed successfully"
         echo_info "Reloading nginx to pick up new certificates..."
         if ! docker compose -f "$COMPOSE_FILE" exec nginx nginx -s reload; then
