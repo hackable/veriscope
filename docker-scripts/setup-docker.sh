@@ -91,7 +91,7 @@ tunnel_start() {
     echo_info "Starting ngrok tunnel for remote access..."
 
     # Check if NGROK_AUTHTOKEN is set in .env
-    if ! grep -q "^NGROK_AUTHTOKEN=" .env 2>/dev/null || [ -z "$(grep "^NGROK_AUTHTOKEN=" .env | cut -d= -f2)" ]; then
+    if [ -z "$(get_env_var "NGROK_AUTHTOKEN")" ]; then
         echo_error "NGROK_AUTHTOKEN is not set in .env file"
         echo ""
         echo "Ngrok requires authentication. To use the tunnel:"
@@ -206,12 +206,12 @@ setup_nginx_config() {
     fi
 
     # Determine certificate paths
-    local ssl_cert="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem"
-    local ssl_key="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem"
+    local ssl_cert=$(get_ssl_cert_path "$VERISCOPE_SERVICE_HOST")
+    local ssl_key=$(get_ssl_key_path "$VERISCOPE_SERVICE_HOST")
 
     # Check if SSL certificates exist in certbot Docker volume
     local cert_check_result=0
-    docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert' && test -f '$ssl_key'" 2>/dev/null || cert_check_result=$?
+    check_ssl_cert_exists "$VERISCOPE_SERVICE_HOST" true || cert_check_result=$?
 
     if [ $cert_check_result -ne 0 ]; then
         echo_info "SSL certificates not found - Nginx will run in HTTP-only mode"
@@ -443,7 +443,7 @@ menu() {
             fi
 
             # Get the project name from docker compose config
-            project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+            project_name=$(get_project_name)
 
             if [ -z "$project_name" ]; then
                 echo_error "Failed to determine project name - aborting installation"
@@ -451,19 +451,8 @@ menu() {
             fi
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            local removed=0
-            for volume in postgres_data redis_data app_data artifacts; do
-                local volume_name="${project_name}_${volume}"
-                if docker volume inspect "$volume_name" >/dev/null 2>&1; then
-                    if docker volume rm "$volume_name" 2>/dev/null; then
-                        echo_info "✓ Removed volume: $volume_name"
-                        removed=$((removed + 1))
-                    else
-                        echo_warn "✗ Failed to remove volume: $volume_name (may not exist)"
-                    fi
-                fi
-            done
-            echo_info "Removed $removed volume(s) (Nethermind data preserved)"
+            remove_data_volumes "$project_name" "postgres_data redis_data app_data artifacts" true
+            echo_info "Data volumes removed (Nethermind data preserved)"
 
             # Step 9: Setup chain config (after resetting volumes)
             echo_info "Step 9/11: Setting up chain configuration..."
@@ -522,18 +511,11 @@ menu() {
             echo ""
 
             # Get service host from .env
-            local service_host=$(grep "^VERISCOPE_SERVICE_HOST=" .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "localhost")
-            service_host=${service_host:-localhost}
+            local service_host=$(get_env_var "VERISCOPE_SERVICE_HOST" "localhost" true)
 
             # Detect SSL certificates to show correct protocol
-            local ssl_cert="/etc/letsencrypt/live/${service_host}/fullchain.pem"
             local protocol="http"
-            local cert_check_result=1
-
-            # Check if SSL certificates exist in the certbot volume
-            docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert'" 2>/dev/null && cert_check_result=0
-
-            if [ $cert_check_result -eq 0 ]; then
+            if check_ssl_cert_exists "$service_host" false; then
                 protocol="https"
             fi
 
@@ -792,13 +774,10 @@ else
             docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
 
             # Get the project name from docker compose config
-            project_name=$(docker compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+            project_name=$(get_project_name)
 
             # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            docker volume rm "${project_name}_postgres_data" 2>/dev/null || true
-            docker volume rm "${project_name}_redis_data" 2>/dev/null || true
-            docker volume rm "${project_name}_app_data" 2>/dev/null || true
-            docker volume rm "${project_name}_artifacts" 2>/dev/null || true
+            remove_data_volumes "$project_name" "postgres_data redis_data app_data artifacts" false
             echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
 
             # Setup chain config AFTER resetting volumes

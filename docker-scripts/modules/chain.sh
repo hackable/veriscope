@@ -25,7 +25,7 @@ check_blockchain_sync() {
     fi
 
     # Get project name and network for Docker networking
-    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(get_project_name)
     local network_name="${project_name}_veriscope"
 
     # Query Nethermind RPC - use temporary Alpine container with curl
@@ -240,7 +240,7 @@ setup_chain_config() {
         echo_info "Copying chain artifacts for $VERISCOPE_TARGET to Docker volume..."
 
         # Get the project name from docker compose config
-        local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json | jq -r '.name // "veriscope"')
+        local project_name=$(get_project_name)
         local volume_name="${project_name}_artifacts"
 
         # Create volume if it doesn't exist
@@ -448,7 +448,7 @@ refresh_static_nodes() {
     fi
 
     # Get the project name and construct the network name dynamically
-    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(get_project_name)
     local network_name="${project_name}_veriscope"
 
     echo_info "Using Docker network: $network_name"
