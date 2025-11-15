@@ -1,0 +1,6 @@
+# Exclude .env from Docker image
+# .env is mounted at runtime via bind mount
+.env
+node_modules/
+npm-debug.log
+logs/
