@@ -52,8 +52,27 @@ EOF
 
 # Add SSL redirect or content serving based on SSL availability
 if [ "${SSL_ENABLED}" = "true" ]; then
-    # If SSL is available, redirect HTTP to HTTPS
+    # If SSL is available, add webhook exception and redirect HTTP to HTTPS
     cat >> /etc/nginx/conf.d/default.conf <<'EOF'
+    # Internal webhook endpoint (exact match, allow HTTP for internal services)
+    location = /webhook {
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;
+        include fastcgi_params;
+
+        fastcgi_param HTTP_X_REAL_IP $remote_addr;
+        fastcgi_param HTTP_X_FORWARDED_FOR $proxy_add_x_forwarded_for;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $scheme;
+        fastcgi_param HTTP_X_FORWARDED_HOST $host;
+        fastcgi_param HTTP_X_FORWARDED_PORT $server_port;
+
+        # Timeouts
+        fastcgi_connect_timeout 120s;
+        fastcgi_send_timeout 120s;
+        fastcgi_read_timeout 120s;
+    }
+
     # Redirect all other HTTP traffic to HTTPS
     location / {
         return 301 https://$server_name$request_uri;
