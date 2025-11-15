@@ -188,7 +188,8 @@ install_redis_bloom() {
     echo_info "No additional installation needed!"
 }
 setup_nginx_config() {
-    echo_info "Setting up Nginx SSL configuration..."
+    echo_info "Setting up Nginx configuration..."
+    echo_info "Nginx will auto-detect SSL certificates and configure itself automatically"
 
     # Load environment
     if [ ! -f ".env" ]; then
@@ -205,201 +206,41 @@ setup_nginx_config() {
     fi
 
     # Determine certificate paths
-    local ssl_cert="${SSL_CERT_PATH:-/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem}"
-    local ssl_key="${SSL_KEY_PATH:-/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem}"
+    local ssl_cert="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/fullchain.pem"
+    local ssl_key="/etc/letsencrypt/live/$VERISCOPE_SERVICE_HOST/privkey.pem"
 
-    # Verify SSL certificates exist in certbot Docker volume (not host filesystem)
+    # Check if SSL certificates exist in certbot Docker volume
     local cert_check_result=0
     docker compose -f "$COMPOSE_FILE" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert' && test -f '$ssl_key'" 2>/dev/null || cert_check_result=$?
 
     if [ $cert_check_result -ne 0 ]; then
-        echo_warn "SSL certificates not found in certbot volume at:"
-        echo_warn "  Certificate: $ssl_cert"
-        echo_warn "  Key: $ssl_key"
-
-        if is_dev_mode; then
-            echo_info ""
-            echo_info "Development mode - Nginx will serve HTTP only on port 80"
-            echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST"
-            echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
-            echo_info ""
-            echo_info "Continuing with setup..."
-            return 0
-        else
-            echo_info "Please run: ./docker-scripts/setup-docker.sh obtain-ssl"
-            echo_info ""
-            echo_info "For now, Nginx will serve HTTP only on port 80"
-            echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST"
-            echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
-            echo_info ""
-            echo_info "Continuing with HTTP-only setup..."
-            return 0
-        fi
-    fi
-
-    echo_info "SSL certificates found"
-    echo_info "  Certificate: $ssl_cert"
-    echo_info "  Key: $ssl_key"
-
-    # Update .env with SSL paths if not already set
-    if ! grep -q "^SSL_CERT_PATH=" .env; then
-        echo "SSL_CERT_PATH=$ssl_cert" >> .env
-        echo_info "Added SSL_CERT_PATH to .env"
-    fi
-
-    if ! grep -q "^SSL_KEY_PATH=" .env; then
-        echo "SSL_KEY_PATH=$ssl_key" >> .env
-        echo_info "Added SSL_KEY_PATH to .env"
-    fi
-
-    # Create SSL-enabled nginx configuration
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local nginx_dir="$script_dir/nginx"
-    mkdir -p "$nginx_dir"
-
-    echo_info "Creating SSL-enabled Nginx configuration..."
-
-    cat > "$nginx_dir/nginx-ssl.conf" <<EOF
-# HTTP server - redirect to HTTPS
-server {
-    listen 80;
-    server_name $VERISCOPE_SERVICE_HOST;
-
-    # Let's Encrypt ACME challenge
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Redirect all other HTTP traffic to HTTPS
-    location / {
-        return 301 https://\$server_name\$request_uri;
-    }
-}
-
-# HTTPS server
-server {
-    listen 443 ssl http2;
-    server_name $VERISCOPE_SERVICE_HOST;
-
-    # SSL certificates
-    ssl_certificate $ssl_cert;
-    ssl_certificate_key $ssl_key;
-
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-
-    # Client settings
-    client_max_body_size 128M;
-    client_body_buffer_size 128k;
-
-    # Logging
-    access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
-
-    # Laravel application (main site)
-    root /var/www/html/public;
-    index index.php index.html;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    location ~ \\.php\$ {
-        fastcgi_pass app:9000;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-
-        fastcgi_param HTTP_X_REAL_IP \$remote_addr;
-        fastcgi_param HTTP_X_FORWARDED_FOR \$proxy_add_x_forwarded_for;
-        fastcgi_param HTTP_X_FORWARDED_PROTO \$scheme;
-        fastcgi_param HTTP_X_FORWARDED_HOST \$host;
-        fastcgi_param HTTP_X_FORWARDED_PORT \$server_port;
-
-        # Timeouts
-        fastcgi_connect_timeout 120s;
-        fastcgi_send_timeout 120s;
-        fastcgi_read_timeout 120s;
-    }
-
-    location ~ /\\.(?!well-known).* {
-        deny all;
-    }
-
-    # Bull Arena queue UI
-    location /arena {
-        proxy_pass http://ta-node:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # Timeouts
-        proxy_connect_timeout 120s;
-        proxy_send_timeout 120s;
-        proxy_read_timeout 120s;
-    }
-
-    # WebSocket key endpoint for Laravel
-    location /app/websocketkey {
-        proxy_pass http://app:6001;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-VerifiedViaNginx yes;
-        proxy_read_timeout 60;
-        proxy_connect_timeout 60;
-        proxy_redirect off;
-
-        # Allow the use of websockets
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    # Health check endpoint
-    location /nginx-health {
-        access_log off;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
-    }
-}
-EOF
-
-    echo_info "SSL configuration created: docker-scripts/nginx/nginx-ssl.conf"
-
-    # Update .env to use SSL nginx config
-    if grep -q "^NGINX_CONFIG=" .env 2>/dev/null; then
-        portable_sed "s/^NGINX_CONFIG=.*/NGINX_CONFIG=nginx-ssl.conf/" .env
+        echo_info "SSL certificates not found - Nginx will run in HTTP-only mode"
+        echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST"
+        echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
+        echo_info ""
+        echo_info "To enable HTTPS, run: ./docker-scripts/setup-docker.sh obtain-ssl"
     else
-        echo "" >> .env
-        echo "# Nginx Configuration" >> .env
-        echo "NGINX_CONFIG=nginx-ssl.conf" >> .env
+        echo_info "✓ SSL certificates found - Nginx will enable HTTPS automatically"
+        echo_info "  Certificate: $ssl_cert"
+        echo_info "  Key: $ssl_key"
     fi
-    echo_info "Updated .env to use SSL configuration"
 
-    # Restart nginx to apply SSL config
-    echo_info "Restarting nginx to enable HTTPS..."
+    # Restart nginx to pick up any certificate changes
+    echo_info "Restarting nginx..."
     if docker compose -f "$COMPOSE_FILE" restart nginx; then
         echo_info "✓ Nginx restarted successfully"
         echo_info ""
-        echo_info "Your services are now available at:"
-        echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST"
-        echo_info "  Arena:   https://$VERISCOPE_SERVICE_HOST/arena"
+
+        # Display appropriate URLs based on certificate availability
+        if [ $cert_check_result -eq 0 ]; then
+            echo_info "Your services are now available at:"
+            echo_info "  Laravel: https://$VERISCOPE_SERVICE_HOST (HTTPS)"
+            echo_info "  Arena:   https://$VERISCOPE_SERVICE_HOST/arena"
+        else
+            echo_info "Your services are now available at:"
+            echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST (HTTP only)"
+            echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
+        fi
     else
         echo_warn "Failed to restart nginx. Restart manually with:"
         echo_warn "  docker compose -f $COMPOSE_FILE restart nginx"

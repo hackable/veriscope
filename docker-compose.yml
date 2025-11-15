@@ -136,6 +136,7 @@ services:
     restart: unless-stopped
 
   # Nginx Reverse Proxy (always enabled for consistent routing)
+  # Auto-detects SSL certificates and configures itself automatically
   nginx:
     image: nginx:1.25-alpine
     container_name: veriscope-nginx
@@ -143,15 +144,17 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # Use SSL config if it exists, otherwise fallback to HTTP-only
-      - ./docker-scripts/nginx/${NGINX_CONFIG:-nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      # Custom entrypoint that auto-detects SSL certificates
+      - ./docker-scripts/nginx/docker-entrypoint.sh:/custom-entrypoint.sh:ro
       - certbot_conf:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
       # Serve compiled assets from app container (read-only)
       - app_data:/var/www/html:ro
     environment:
+      VERISCOPE_SERVICE_HOST: ${VERISCOPE_SERVICE_HOST:-localhost}
       NGINX_HOST: ${VERISCOPE_SERVICE_HOST:-localhost}
-      NGINX_ENVSUBST_TEMPLATE_SUFFIX: .conf
+    entrypoint: ["/bin/sh", "/custom-entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
     depends_on:
       - app
       - ta-node
