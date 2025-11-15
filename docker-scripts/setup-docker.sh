@@ -228,7 +228,9 @@ setup_nginx_config() {
             echo_info "For now, Nginx will serve HTTP only on port 80"
             echo_info "  Laravel: http://$VERISCOPE_SERVICE_HOST"
             echo_info "  Arena:   http://$VERISCOPE_SERVICE_HOST/arena"
-            return 1
+            echo_info ""
+            echo_info "Continuing with HTTP-only setup..."
+            return 0
         fi
     fi
 
