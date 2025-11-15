@@ -55,15 +55,23 @@ class EthSyncCheck implements Check
             $body = json_decode($response->getBody(), true);
             $currentBlockNumber = hexdec($body['result']);
 
-            // Get the highest block number known to the Ethereum network
+            // Get the highest block number from sync status
             $response = $client->post('', ['json' => [
                 'jsonrpc' => '2.0',
-                'method' => 'eth_blockNumber',
+                'method' => 'eth_syncing',
                 'params' => [],
                 'id' => 2,
             ]]);
             $body = json_decode($response->getBody(), true);
-            $highestBlockNumber = hexdec($body['result']);
+            $syncStatus = $body['result'];
+
+            // If eth_syncing returns false, node is synced - use current block as highest
+            // Otherwise, get highestBlock from sync status
+            if ($syncStatus === false) {
+                $highestBlockNumber = $currentBlockNumber;
+            } else {
+                $highestBlockNumber = hexdec($syncStatus['highestBlock']);
+            }
 
             // Check if Nethermind is fully synced
             if ($currentBlockNumber < ($highestBlockNumber - 2)) {
