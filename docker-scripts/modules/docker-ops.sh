@@ -270,7 +270,7 @@ reset_volumes() {
 
 # Remove specific data volumes (helper function for installations)
 # Usage: remove_data_volumes [project_name] [volumes_list] [verbose]
-# Returns: number of volumes removed
+# Returns: 0 on success (always succeeds, missing volumes are ok)
 remove_data_volumes() {
     local project_name="${1:-$(get_project_name)}"
     local volumes_to_remove="${2:-postgres_data redis_data app_data artifacts}"
@@ -289,7 +289,8 @@ remove_data_volumes() {
         fi
     done
 
-    return $removed
+    # Always return 0 (success) - missing volumes are not an error
+    return 0
 }
 
 # Destroy all services, containers, volumes, and networks
