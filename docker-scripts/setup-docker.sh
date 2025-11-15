@@ -518,42 +518,53 @@ menu() {
                 exit 1
             fi
 
-            # Step 2: Generate credentials
-            echo_info "Step 2/11: Generating PostgreSQL credentials..."
+            # Step 2: Ensure directory exists before setup_chain_config
+            echo_info "Step 2/11: Creating veriscope_ta_node directory..."
+            mkdir -p veriscope_ta_node
+
+            # Step 3: Generate credentials
+            echo_info "Step 3/11: Generating PostgreSQL credentials..."
             if ! generate_postgres_credentials; then
                 echo_error "Failed to generate credentials - aborting installation"
                 exit 1
             fi
 
-            # Step 3: Build images
-            echo_info "Step 3/11: Building Docker images..."
+            # Step 4: Setup chain config (before building images)
+            echo_info "Step 4/11: Setting up chain configuration..."
+            if ! setup_chain_config; then
+                echo_error "Failed to setup chain config - aborting installation"
+                exit 1
+            fi
+
+            # Step 5: Build images
+            echo_info "Step 5/11: Building Docker images..."
             if ! build_images; then
                 echo_error "Failed to build images - aborting installation"
                 exit 1
             fi
 
-            # Step 4: Create sealer keypair
-            echo_info "Step 4/11: Creating sealer keypair..."
+            # Step 6: Create sealer keypair
+            echo_info "Step 6/11: Creating sealer keypair..."
             if ! create_sealer_keypair; then
                 echo_error "Failed to create sealer keypair - aborting installation"
                 exit 1
             fi
 
-            # Step 5: SSL certificate (optional - may fail in dev mode)
-            echo_info "Step 5/11: Obtaining SSL certificate..."
+            # Step 7: SSL certificate (optional - may fail in dev mode)
+            echo_info "Step 7/11: Obtaining SSL certificate..."
             if ! obtain_ssl_certificate; then
                 echo_warn "SSL certificate setup skipped or failed (continuing...)"
             fi
 
-            # Step 6: Setup nginx config
-            echo_info "Step 6/11: Setting up Nginx configuration..."
+            # Step 8: Setup nginx config
+            echo_info "Step 8/11: Setting up Nginx configuration..."
             if ! setup_nginx_config; then
                 echo_error "Failed to setup Nginx config - aborting installation"
                 exit 1
             fi
 
-            # Step 7: Reset volumes to ensure clean state with new credentials
-            echo_info "Step 7/11: Resetting database and cache volumes..."
+            # Step 9: Reset volumes to ensure clean state with new credentials
+            echo_info "Step 9/11: Resetting database and cache volumes..."
             if ! stop_services; then
                 echo_warn "Failed to stop services cleanly - continuing..."
             fi
@@ -581,15 +592,8 @@ menu() {
             done
             echo_info "Removed $removed volume(s) (Nethermind data preserved)"
 
-            # Ensure veriscope_ta_node/.env exists as a FILE before starting services
-            # Otherwise Docker will create it as a DIRECTORY when mounting volumes
-            echo_info "Creating placeholder .env files for Docker volume mounts..."
-            mkdir -p veriscope_ta_node
-            touch veriscope_ta_node/.env
-            echo_info "Placeholder .env file created (will be configured in next step)"
-
-            # Step 8: Start services and wait for readiness
-            echo_info "Step 8/11: Starting services..."
+            # Step 10: Start services and wait for readiness
+            echo_info "Step 10/11: Starting services..."
             if ! start_services; then
                 echo_error "Failed to start services - aborting installation"
                 exit 1
@@ -602,35 +606,15 @@ menu() {
                 exit 1
             fi
 
-            # Step 9: Setup chain config AFTER volumes are reset and services are started
-            echo_info "Step 9/11: Setting up chain configuration..."
-            if ! setup_chain_config; then
-                echo_error "Failed to setup chain config - aborting installation"
-                exit 1
-            fi
-
-            # Restart ta-node to pick up artifacts
-            echo_info "Restarting ta-node to load chain artifacts..."
-            if ! docker compose -f "$COMPOSE_FILE" restart ta-node; then
-                echo_error "Failed to restart ta-node - aborting installation"
-                exit 1
-            fi
-
-            # Wait for ta-node to be ready after restart
-            if ! wait_for_ta_node_ready 60; then
-                echo_error "TA Node failed to restart - aborting installation"
-                exit 1
-            fi
-
-            # Step 10: Laravel setup
-            echo_info "Step 10/11: Running Laravel setup..."
+            # Step 11: Laravel setup
+            echo_info "Step 11/11: Running Laravel setup..."
             if ! full_laravel_setup; then
                 echo_error "Laravel setup failed - aborting installation"
                 exit 1
             fi
 
-            # Step 11: Install additional components
-            echo_info "Step 11/11: Installing additional components..."
+            # Install additional components
+            echo_info "Installing additional components..."
 
             if ! install_horizon; then
                 echo_warn "Horizon installation failed (continuing...)"
@@ -925,14 +909,6 @@ else
             docker volume rm "${project_name}_app_data" 2>/dev/null || true
             docker volume rm "${project_name}_artifacts" 2>/dev/null || true
             echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
-
-            # Ensure veriscope_ta_node/.env exists as a FILE before starting services
-            # Otherwise Docker will create it as a DIRECTORY when mounting volumes
-            if [ ! -f "veriscope_ta_node/.env" ]; then
-                echo_info "Creating placeholder .env file for Docker volume mount..."
-                mkdir -p veriscope_ta_node
-                touch veriscope_ta_node/.env
-            fi
 
             start_services
             sleep 15
