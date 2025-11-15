@@ -256,6 +256,42 @@ check_docker() {
     echo_info "Docker is installed: $(docker --version)"
 }
 
+# Check if required host dependencies are installed
+# Returns: 0 if all installed, 1 if missing (warns but doesn't exit)
+check_host_dependencies() {
+    local required_tools=("jq" "unzip" "make" "ntpdate" "sponge")
+    local tool_descriptions=("JSON processor" "Archive utility" "Build tool" "Time sync utility" "Moreutils (sponge)")
+    local missing_tools=()
+
+    for i in "${!required_tools[@]}"; do
+        local tool="${required_tools[$i]}"
+        local desc="${tool_descriptions[$i]}"
+
+        if ! command -v "$tool" &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        echo_warn "Missing required host dependencies:"
+        for tool in "${missing_tools[@]}"; do
+            echo "  - $tool"
+        done
+        echo ""
+        echo_info "Install missing dependencies:"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  brew install jq unzip make moreutils"
+        else
+            echo "  sudo apt-get update && sudo apt-get install -y jq unzip make ntpdate moreutils"
+        fi
+        echo ""
+        return 1
+    fi
+
+    echo_info "All host dependencies installed"
+    return 0
+}
+
 # ============================================================================
 # PORT VALIDATION
 # ============================================================================
@@ -378,9 +414,21 @@ preflight_checks() {
 
     local all_checks_passed=true
 
-    # 1. Check Docker daemon
+    # 1. Check Host Dependencies
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "1. Docker Daemon Status"
+    echo "1. Host Dependencies"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if check_host_dependencies; then
+        echo_info "✓ All host dependencies are installed"
+    else
+        echo_warn "⚠ Some host dependencies are missing"
+        all_checks_passed=false
+    fi
+    echo ""
+
+    # 2. Check Docker daemon
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "2. Docker Daemon Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if docker info >/dev/null 2>&1; then
         echo_info "✓ Docker daemon is running"
@@ -391,9 +439,9 @@ preflight_checks() {
     fi
     echo ""
 
-    # 2. Check required ports
+    # 3. Check required ports
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "2. Port Availability"
+    echo "3. Port Availability"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     local ports=(80 443 5432 6379 8545)
     local port_names=("HTTP" "HTTPS" "PostgreSQL" "Redis" "Nethermind RPC")
@@ -418,9 +466,9 @@ preflight_checks() {
     fi
     echo ""
 
-    # 3. Check disk space
+    # 4. Check disk space
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "3. Disk Space"
+    echo "4. Disk Space"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     local available_space_gb=$(get_available_disk_space_gb "$PROJECT_ROOT")
     local min_required_gb=20
@@ -438,9 +486,9 @@ preflight_checks() {
     fi
     echo ""
 
-    # 4. Check network connectivity
+    # 5. Check network connectivity
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "4. Network Connectivity"
+    echo "5. Network Connectivity"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Check internet connectivity
@@ -468,9 +516,9 @@ preflight_checks() {
     fi
     echo ""
 
-    # 5. Check Docker resources
+    # 6. Check Docker resources
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "5. Docker Resources"
+    echo "6. Docker Resources"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     local docker_disk_usage=$(docker system df --format "{{.Type}}\t{{.Size}}" 2>/dev/null | grep "Total" | awk '{print $2}' || echo "Unknown")
     echo_info "Current Docker disk usage: $docker_disk_usage"
@@ -488,9 +536,9 @@ preflight_checks() {
     fi
     echo ""
 
-    # 6. Check for conflicting containers
+    # 7. Check for conflicting containers
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "6. Existing Containers"
+    echo "7. Existing Containers"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     local running_containers=$(docker ps --filter "name=veriscope-" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
     local all_containers=$(docker ps -a --filter "name=veriscope-" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
