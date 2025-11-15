@@ -250,6 +250,194 @@ setup_nginx_config() {
         echo_warn "  docker compose -f $COMPOSE_FILE restart nginx"
     fi
 }
+
+# ============================================================================
+# UNIFIED FULL INSTALLATION
+# ============================================================================
+
+# Perform full Veriscope installation
+# Usage: perform_full_install [interactive_mode]
+# Parameters:
+#   interactive_mode: "true" for menu-driven install with step numbers and detailed output
+#                     "false" for CLI install with minimal output (default)
+perform_full_install() {
+    local interactive="${1:-false}"
+    local step_num=0
+    local total_steps=11
+
+    # Set installation mode flag
+    if [ "$interactive" = "true" ]; then
+        FULL_INSTALL_MODE=true
+        echo_info "========================================="
+        echo_info "  Veriscope Full Installation"
+        echo_info "========================================="
+        echo ""
+    fi
+
+    # Helper function to show step numbers in interactive mode
+    step_info() {
+        if [ "$interactive" = "true" ]; then
+            step_num=$((step_num + 1))
+            echo_info "Step $step_num/$total_steps: $1"
+        else
+            echo_info "$1"
+        fi
+    }
+
+    # Step 1: Pre-flight checks
+    step_info "Running pre-flight checks..."
+
+    if ! check_host_dependencies; then
+        abort_install "Host dependencies check failed" "Please install missing dependencies and try again"
+    fi
+
+    if ! check_docker; then
+        abort_install "Docker check failed"
+    fi
+
+    if ! check_env; then
+        abort_install "Environment check failed"
+    fi
+
+    # Run preflight checks (for CLI mode - menu mode already did this)
+    if [ "$interactive" = "false" ]; then
+        echo ""
+        echo_info "Running system pre-flight checks..."
+        if ! preflight_checks; then
+            exit 1
+        fi
+        echo ""
+    fi
+
+    # Step 2: Create directory
+    step_info "Creating veriscope_ta_node directory..."
+    mkdir -p veriscope_ta_node
+
+    # Step 3: Generate credentials
+    step_info "Generating PostgreSQL credentials..."
+    if ! generate_postgres_credentials; then
+        abort_install "Failed to generate credentials"
+    fi
+
+    # Step 4: Build images
+    step_info "Building Docker images..."
+    if ! build_images; then
+        abort_install "Failed to build images"
+    fi
+
+    # Step 5: Create sealer keypair
+    step_info "Creating sealer keypair..."
+    if ! create_sealer_keypair; then
+        abort_install "Failed to create sealer keypair"
+    fi
+
+    # Step 6: SSL certificate (optional)
+    if [ "$interactive" = "true" ]; then
+        step_info "Obtaining SSL certificate..."
+        if ! obtain_ssl_certificate; then
+            echo_warn "SSL certificate setup skipped or failed (continuing...)"
+        fi
+
+        # Step 7: Setup nginx config
+        step_info "Setting up Nginx configuration..."
+        if ! setup_nginx_config; then
+            abort_install "Failed to setup Nginx config"
+        fi
+    fi
+
+    # Step 8: Reset volumes
+    step_info "Resetting database and cache volumes..."
+    if ! stop_services; then
+        echo_warn "Failed to stop services cleanly - continuing..."
+    fi
+
+    project_name=$(get_project_name)
+    if [ -z "$project_name" ]; then
+        abort_install "Failed to determine project name"
+    fi
+
+    # Remove volumes (verbose in interactive mode)
+    local verbose="false"
+    [ "$interactive" = "true" ] && verbose="true"
+    remove_data_volumes "$project_name" "$RESETTABLE_VOLUMES" "$verbose"
+    echo_info "Data volumes removed (Nethermind data preserved)"
+
+    # Step 9: Setup chain config
+    step_info "Setting up chain configuration..."
+    if ! setup_chain_config; then
+        abort_install "Failed to setup chain config"
+    fi
+
+    # Step 10: Start services
+    step_info "Starting services..."
+    if ! start_services; then
+        abort_install "Failed to start services"
+    fi
+
+    # Wait for services to be ready (different methods for interactive vs CLI)
+    if [ "$interactive" = "true" ]; then
+        echo_info "Waiting for services to be ready..."
+        if ! wait_for_services_ready $SERVICE_READY_TIMEOUT; then
+            abort_install "Services failed to become ready" "Check service logs: docker compose -f $COMPOSE_FILE logs"
+        fi
+    else
+        # CLI mode uses simple sleep
+        sleep $SERVICE_STARTUP_WAIT
+    fi
+
+    # Step 11: Laravel setup
+    step_info "Running Laravel setup..."
+    if ! full_laravel_setup; then
+        abort_install "Laravel setup failed"
+    fi
+
+    # Install additional components
+    echo_info "Installing additional components..."
+
+    if [ "$interactive" = "true" ]; then
+        # Interactive mode: handle errors gracefully
+        if ! install_horizon; then
+            echo_warn "Horizon installation failed (continuing...)"
+        fi
+
+        if ! install_passport_env; then
+            echo_warn "Passport environment setup failed (continuing...)"
+        fi
+
+        if ! install_address_proofs; then
+            echo_warn "Address proofs installation failed (continuing...)"
+        fi
+    else
+        # CLI mode: run without error handling
+        install_horizon
+        install_passport_env
+        install_address_proofs
+    fi
+
+    # Create admin user
+    create_admin
+
+    # Show completion message
+    if [ "$interactive" = "true" ]; then
+        echo ""
+        echo_info "========================================="
+        echo_info "  Full Installation Completed!"
+        echo_info "========================================="
+        echo ""
+        echo_info "Post-installation steps:"
+        echo_info "  1. Create admin user: ./docker-scripts/setup-docker.sh create-admin"
+        echo_info "  2. (Optional) Download address proofs: ./docker-scripts/setup-docker.sh install-address-proofs"
+        echo ""
+
+        # Show service URLs
+        local service_host=$(get_env_var "VERISCOPE_SERVICE_HOST" "localhost" true)
+        show_service_urls "$service_host" "access"
+        echo ""
+    else
+        echo_info "Full installation completed!"
+    fi
+}
+
 menu() {
     echo ""
     echo "================================"
@@ -375,137 +563,8 @@ menu() {
             update_chainspec
             ;;
         i)
-            FULL_INSTALL_MODE=true
-
-            echo_info "========================================="
-            echo_info "  Veriscope Full Installation"
-            echo_info "========================================="
-            echo ""
-
-            # Step 1: Pre-flight checks
-            echo_info "Step 1/11: Running pre-flight checks..."
-
-            # Check host dependencies first
-            if ! check_host_dependencies; then
-                abort_install "Host dependencies check failed" "Please install missing dependencies and try again"
-            fi
-
-            if ! check_docker; then
-                abort_install "Docker check failed"
-            fi
-
-            if ! check_env; then
-                abort_install "Environment check failed"
-            fi
-
-            # Step 2: Ensure directory exists before setup_chain_config
-            echo_info "Step 2/11: Creating veriscope_ta_node directory..."
-            mkdir -p veriscope_ta_node
-
-            # Step 3: Generate credentials
-            echo_info "Step 3/11: Generating PostgreSQL credentials..."
-            if ! generate_postgres_credentials; then
-                abort_install "Failed to generate credentials"
-            fi
-
-            # Step 4: Build images
-            echo_info "Step 4/11: Building Docker images..."
-            if ! build_images; then
-                abort_install "Failed to build images"
-            fi
-
-            # Step 5: Create sealer keypair
-            echo_info "Step 5/11: Creating sealer keypair..."
-            if ! create_sealer_keypair; then
-                abort_install "Failed to create sealer keypair"
-            fi
-
-            # Step 6: SSL certificate (optional - may fail in dev mode)
-            echo_info "Step 6/11: Obtaining SSL certificate..."
-            if ! obtain_ssl_certificate; then
-                echo_warn "SSL certificate setup skipped or failed (continuing...)"
-            fi
-
-            # Step 7: Setup nginx config
-            echo_info "Step 7/11: Setting up Nginx configuration..."
-            if ! setup_nginx_config; then
-                abort_install "Failed to setup Nginx config"
-            fi
-
-            # Step 8: Reset volumes to ensure clean state with new credentials
-            echo_info "Step 8/11: Resetting database and cache volumes..."
-            if ! stop_services; then
-                echo_warn "Failed to stop services cleanly - continuing..."
-            fi
-
-            # Get the project name from docker compose config
-            project_name=$(get_project_name)
-
-            if [ -z "$project_name" ]; then
-                abort_install "Failed to determine project name"
-            fi
-
-            # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            remove_data_volumes "$project_name" "$RESETTABLE_VOLUMES" true
-            echo_info "Data volumes removed (Nethermind data preserved)"
-
-            # Step 9: Setup chain config (after resetting volumes)
-            echo_info "Step 9/11: Setting up chain configuration..."
-            if ! setup_chain_config; then
-                abort_install "Failed to setup chain config"
-            fi
-
-            # Step 10: Start services and wait for readiness
-            echo_info "Step 10/11: Starting services..."
-            if ! start_services; then
-                abort_install "Failed to start services"
-            fi
-
-            echo_info "Waiting for services to be ready..."
-            if ! wait_for_services_ready $SERVICE_READY_TIMEOUT; then
-                abort_install "Services failed to become ready" "Check service logs: docker compose -f $COMPOSE_FILE logs"
-            fi
-
-            # Step 11: Laravel setup
-            echo_info "Step 11/11: Running Laravel setup..."
-            if ! full_laravel_setup; then
-                abort_install "Laravel setup failed"
-            fi
-
-            # Install additional components
-            echo_info "Installing additional components..."
-
-            if ! install_horizon; then
-                echo_warn "Horizon installation failed (continuing...)"
-            fi
-
-            if ! install_passport_env; then
-                echo_warn "Passport environment setup failed (continuing...)"
-            fi
-
-            if ! install_address_proofs; then
-                echo_warn "Address proofs installation failed (continuing...)"
-            fi
-
-            # Create admin (optional - interactive)
-            create_admin
-
-            echo ""
-            echo_info "========================================="
-            echo_info "  Full Installation Completed!"
-            echo_info "========================================="
-            echo ""
-            echo_info "Post-installation steps:"
-            echo_info "  1. Create admin user: ./docker-scripts/setup-docker.sh create-admin"
-            echo_info "  2. (Optional) Download address proofs: ./docker-scripts/setup-docker.sh install-address-proofs"
-            echo ""
-
-            # Get service host from .env
-            local service_host=$(get_env_var "VERISCOPE_SERVICE_HOST" "localhost" true)
-
-            # Show service URLs
-            show_service_urls "$service_host" "access"
-            echo ""
+            # Run full installation in interactive mode
+            perform_full_install "true"
             ;;
         s)
             show_status
@@ -725,54 +784,8 @@ else
             regenerate_encrypt_secret
             ;;
         full-install)
-            # Check host dependencies first
-            if ! check_host_dependencies; then
-                abort_install "Host dependencies check failed" "Please install missing dependencies and try again"
-            fi
-
-            check_docker
-            check_env
-
-            # Run pre-flight checks
-            echo ""
-            echo_info "Running pre-flight checks before installation..."
-            if ! preflight_checks; then
-                exit 1
-            fi
-            echo ""
-
-            # Ensure veriscope_ta_node directory exists before setup_chain_config
-            # Otherwise setup_chain_config will fail when trying to copy .env template
-            echo_info "Creating veriscope_ta_node directory..."
-            mkdir -p veriscope_ta_node
-
-            generate_postgres_credentials
-            build_images
-            create_sealer_keypair
-
-            # Reset volumes to ensure clean state with new credentials
-            echo_info "Ensuring clean database and cache volumes..."
-            docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
-
-            # Get the project name from docker compose config
-            project_name=$(get_project_name)
-
-            # Remove only postgres and redis volumes (preserve Nethermind blockchain data)
-            remove_data_volumes "$project_name" "$RESETTABLE_VOLUMES" false
-            echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
-
-            # Setup chain config AFTER resetting volumes
-            echo_info "Setting up chain configuration..."
-            setup_chain_config
-
-            start_services
-            sleep $SERVICE_STARTUP_WAIT
-            full_laravel_setup
-            install_horizon
-            install_passport_env
-            install_address_proofs
-            create_admin
-            echo_info "Full installation completed!"
+            # Run full installation in CLI mode
+            perform_full_install "false"
             ;;
         backup)
             backup_database
