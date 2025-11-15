@@ -157,3 +157,55 @@ log_operation() {
     mkdir -p "$(dirname "$log_file")"
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] [$status] $operation - $details" >> "$log_file"
 }
+
+# Get Docker Compose project name
+# Returns: project name from docker-compose.yml (defaults to "veriscope")
+get_project_name() {
+    docker compose -f "${COMPOSE_FILE:-docker-compose.yml}" config --format json 2>/dev/null | jq -r '.name // "veriscope"'
+}
+
+# Read variable from .env file
+# Usage: get_env_var <variable_name> [default_value] [strip_quotes]
+# Returns: variable value or default if not found
+get_env_var() {
+    local var_name="$1"
+    local default_value="${2:-}"
+    local strip_quotes="${3:-false}"
+
+    if [ -z "$var_name" ]; then
+        echo_error "get_env_var: No variable name provided"
+        echo "$default_value"
+        return 1
+    fi
+
+    if [ ! -f ".env" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local value=$(grep "^${var_name}=" .env 2>/dev/null | cut -d= -f2)
+
+    if [ "$strip_quotes" = "true" ]; then
+        value=$(echo "$value" | tr -d '"')
+    fi
+
+    echo "${value:-$default_value}"
+}
+
+# Load .env file into environment
+# Usage: load_env_file [path_to_env_file]
+# Returns: 0 on success, 1 if file not found
+load_env_file() {
+    local env_file="${1:-.env}"
+
+    if [ ! -f "$env_file" ]; then
+        echo_error "Environment file not found: $env_file"
+        return 1
+    fi
+
+    set -o allexport
+    source "$env_file"
+    set +o allexport
+
+    return 0
+}

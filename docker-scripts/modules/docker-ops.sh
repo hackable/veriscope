@@ -232,7 +232,7 @@ reset_volumes() {
     fi
 
     # Get the project name from docker compose config
-    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(get_project_name)
 
     if [ -z "$project_name" ]; then
         echo_error "Failed to determine project name"
@@ -266,6 +266,30 @@ reset_volumes() {
 
     echo_info "Successfully removed $removed volume(s)"
     echo_warn "You will need to run migrations and seed the database again"
+}
+
+# Remove specific data volumes (helper function for installations)
+# Usage: remove_data_volumes [project_name] [volumes_list] [verbose]
+# Returns: number of volumes removed
+remove_data_volumes() {
+    local project_name="${1:-$(get_project_name)}"
+    local volumes_to_remove="${2:-postgres_data redis_data app_data artifacts}"
+    local verbose="${3:-true}"
+
+    local removed=0
+    for volume in $volumes_to_remove; do
+        local volume_name="${project_name}_${volume}"
+        if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            if docker volume rm "$volume_name" 2>/dev/null; then
+                [ "$verbose" = "true" ] && echo_info "✓ Removed volume: $volume_name"
+                removed=$((removed + 1))
+            else
+                [ "$verbose" = "true" ] && echo_warn "✗ Failed to remove volume: $volume_name"
+            fi
+        fi
+    done
+
+    return $removed
 }
 
 # Destroy all services, containers, volumes, and networks
@@ -308,7 +332,7 @@ destroy_services() {
     echo_info "Beginning destroy sequence..."
 
     # Get the project name from docker compose config
-    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(get_project_name)
 
     # Stop and remove containers, networks
     echo_info "Stopping and removing containers and networks..."

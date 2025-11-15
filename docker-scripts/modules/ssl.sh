@@ -16,11 +16,46 @@ source "${SCRIPT_DIR}/validators.sh"
 # CERTIFICATE CHECKING
 # ============================================================================
 
+# Check if SSL certificates exist in the certbot volume
+# Usage: check_ssl_cert_exists [domain] [check_both]
+# Returns: 0 if certificates exist, 1 if not
+check_ssl_cert_exists() {
+    local domain="${1:-$VERISCOPE_SERVICE_HOST}"
+    local check_both="${2:-true}"  # Check both cert and key, or just cert
+
+    local ssl_cert="/etc/letsencrypt/live/${domain}/fullchain.pem"
+    local ssl_key="/etc/letsencrypt/live/${domain}/privkey.pem"
+
+    if [ "$check_both" = "true" ]; then
+        docker compose -f "${COMPOSE_FILE:-docker-compose.yml}" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert' && test -f '$ssl_key'" 2>/dev/null
+    else
+        docker compose -f "${COMPOSE_FILE:-docker-compose.yml}" run --rm --entrypoint sh certbot -c "test -f '$ssl_cert'" 2>/dev/null
+    fi
+
+    return $?
+}
+
+# Get SSL certificate path
+# Usage: get_ssl_cert_path [domain]
+# Returns: path to SSL certificate
+get_ssl_cert_path() {
+    local domain="${1:-$VERISCOPE_SERVICE_HOST}"
+    echo "/etc/letsencrypt/live/${domain}/fullchain.pem"
+}
+
+# Get SSL certificate key path
+# Usage: get_ssl_key_path [domain]
+# Returns: path to SSL certificate key
+get_ssl_key_path() {
+    local domain="${1:-$VERISCOPE_SERVICE_HOST}"
+    echo "/etc/letsencrypt/live/${domain}/privkey.pem"
+}
+
 # Check SSL certificate expiry
 # Displays certificate information and expiration status
 check_certificate_expiry() {
     # Check if certbot volume exists and has certificates
-    local project_name=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null | jq -r '.name // "veriscope"')
+    local project_name=$(get_project_name)
 
     if ! docker volume ls --format "{{.Name}}" | grep -q "${project_name}_certbot_conf"; then
         echo_info "ℹ No SSL certificates (certbot volume not found)"
@@ -28,10 +63,7 @@ check_certificate_expiry() {
     fi
 
     # Load service host from .env
-    local service_host=""
-    if [ -f ".env" ]; then
-        service_host=$(grep "^VERISCOPE_SERVICE_HOST=" .env 2>/dev/null | cut -d= -f2)
-    fi
+    local service_host=$(get_env_var "VERISCOPE_SERVICE_HOST")
 
     if [ -z "$service_host" ] || [ "$service_host" = "localhost" ] || [ "$service_host" = "127.0.0.1" ]; then
         echo_info "ℹ No SSL certificates configured (localhost deployment)"
