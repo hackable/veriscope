@@ -209,3 +209,84 @@ load_env_file() {
 
     return 0
 }
+
+# Check if a named container is running (by container name, not compose service)
+# Usage: is_named_container_running <container_name> [require_status]
+# Returns: 0 if running, 1 if not
+is_named_container_running() {
+    local container_name="$1"
+    local require_status="${2:-}"  # Optional: "running" to check status
+
+    if [ -z "$container_name" ]; then
+        echo_error "is_named_container_running: No container name provided"
+        return 1
+    fi
+
+    local filter_args="--filter name=$container_name"
+    if [ -n "$require_status" ]; then
+        filter_args="$filter_args --filter status=$require_status"
+    fi
+
+    if docker ps $filter_args --format "{{.Names}}" | grep -q "$container_name"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Display service URLs with automatic protocol detection
+# Usage: show_service_urls [service_host] [context]
+# Context: "available" (default), "configured", "access"
+show_service_urls() {
+    local service_host="${1:-$(get_env_var "VERISCOPE_SERVICE_HOST" "localhost" true)}"
+    local context="${2:-available}"
+
+    # Detect protocol based on SSL certificate availability
+    local protocol="http"
+    local ssl_status=""
+
+    if check_ssl_cert_exists "$service_host" false 2>/dev/null; then
+        protocol="https"
+        ssl_status=" (HTTPS)"
+    else
+        ssl_status=" (HTTP only)"
+    fi
+
+    case "$context" in
+        "available")
+            echo_info "Your services are now available at:"
+            ;;
+        "configured")
+            echo_info "Services configured at:"
+            ;;
+        "access")
+            echo_info "Access your Veriscope instance at:"
+            ;;
+    esac
+
+    echo_info "  Laravel: ${protocol}://${service_host}${ssl_status}"
+    echo_info "  Arena:   ${protocol}://${service_host}/arena"
+}
+
+# Report installation failure and exit
+# Usage: abort_install <step_name> [error_details]
+abort_install() {
+    local step_name="$1"
+    local error_details="${2:-}"
+
+    echo_error "${step_name} - aborting installation"
+
+    if [ -n "$error_details" ]; then
+        echo_info "$error_details"
+    fi
+
+    if [ "${FULL_INSTALL_MODE:-false}" = "true" ]; then
+        echo ""
+        echo_info "Installation failed. You can:"
+        echo_info "  - Check logs above for specific errors"
+        echo_info "  - Run individual setup steps manually"
+        echo_info "  - Check documentation for troubleshooting"
+    fi
+
+    exit 1
+}
