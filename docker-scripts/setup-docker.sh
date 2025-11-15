@@ -581,6 +581,13 @@ menu() {
             done
             echo_info "Removed $removed volume(s) (Nethermind data preserved)"
 
+            # Ensure veriscope_ta_node/.env exists as a FILE before starting services
+            # Otherwise Docker will create it as a DIRECTORY when mounting volumes
+            echo_info "Creating placeholder .env files for Docker volume mounts..."
+            mkdir -p veriscope_ta_node
+            touch veriscope_ta_node/.env
+            echo_info "Placeholder .env file created (will be configured in next step)"
+
             # Step 8: Start services and wait for readiness
             echo_info "Step 8/11: Starting services..."
             if ! start_services; then
@@ -913,6 +920,14 @@ else
             docker volume rm "${project_name}_app_data" 2>/dev/null || true
             docker volume rm "${project_name}_artifacts" 2>/dev/null || true
             echo_info "PostgreSQL, Redis, app, and artifacts volumes reset (Nethermind data preserved)"
+
+            # Ensure veriscope_ta_node/.env exists as a FILE before starting services
+            # Otherwise Docker will create it as a DIRECTORY when mounting volumes
+            if [ ! -f "veriscope_ta_node/.env" ]; then
+                echo_info "Creating placeholder .env file for Docker volume mount..."
+                mkdir -p veriscope_ta_node
+                touch veriscope_ta_node/.env
+            fi
 
             start_services
             sleep 15
