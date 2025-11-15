@@ -191,7 +191,7 @@ services:
     container_name: veriscope-tunnel
     command: http nginx:80 --log stdout
     environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
     depends_on:
       - nginx
     networks:
