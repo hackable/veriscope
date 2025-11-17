@@ -1,2 +1,14 @@
 #!/bin/sh
-ntpdate pool.ntp.org
+# Modern replacement for ntpdate using timedatectl/systemd-timesyncd
+# Ubuntu 16.04+ uses systemd-timesyncd by default
+
+# Force systemd-timesyncd to sync time immediately
+if command -v timedatectl >/dev/null 2>&1; then
+    # Restart timesyncd to force immediate sync
+    systemctl restart systemd-timesyncd
+else
+    # Fallback to ntpdate if available (legacy systems)
+    if command -v ntpdate >/dev/null 2>&1; then
+        ntpdate pool.ntp.org
+    fi
+fi
