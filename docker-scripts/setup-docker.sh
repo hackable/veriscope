@@ -413,11 +413,16 @@ perform_full_install() {
         if ! install_address_proofs; then
             echo_warn "Address proofs installation failed (continuing...)"
         fi
+
+        if ! refresh_static_nodes; then
+            echo_warn "Static nodes refresh failed (continuing...)"
+        fi
     else
         # CLI mode: run without error handling
         install_horizon
         install_passport_env
         install_address_proofs
+        refresh_static_nodes
     fi
 
     # Create admin user
