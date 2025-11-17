@@ -239,8 +239,21 @@ install_redis() {
 
     # Add Redis Stack repository if not already added
     if [ ! -f /usr/share/keyrings/redis-archive-keyring.gpg ]; then
+        # Determine Ubuntu codename for Redis repository
+        local ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "noble")
+        local redis_codename="$ubuntu_codename"
+
+        # Map unsupported Ubuntu versions to the latest LTS (noble/24.04)
+        # Redis repository typically only supports LTS releases
+        case "$ubuntu_codename" in
+            questing|plucky|oracular)
+                redis_codename="noble"
+                echo_info "Ubuntu $ubuntu_codename detected, using Redis packages from noble (24.04 LTS)"
+                ;;
+        esac
+
         curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-        echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+        echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $redis_codename main" | sudo tee /etc/apt/sources.list.d/redis.list
         apt-get update
     fi
 
