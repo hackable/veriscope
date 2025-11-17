@@ -37,18 +37,18 @@
           - moreutils
           - net-tools
           - postgresql-client
-          - php8.3-fpm
-          - php8.3-dom
-          - php8.3-zip
-          - php8.3-mbstring
-          - php8.3-curl
-          - php8.3-dom
-          - php8.3-gd
-          - php8.3-imagick
-          - php8.3-pgsql
-          - php8.3-gmp
-          - php8.3-redis
-          - php8.3-mbstring
+          - php8.4-fpm
+          - php8.4-dom
+          - php8.4-zip
+          - php8.4-mbstring
+          - php8.4-curl
+          - php8.4-dom
+          - php8.4-gd
+          - php8.4-imagick
+          - php8.4-pgsql
+          - php8.4-gmp
+          - php8.4-redis
+          - php8.4-mbstring
           - nodejs
           - build-essential
           - nginx

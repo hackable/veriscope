@@ -8,7 +8,7 @@
     redisbloom_tarball: 'https://github.com/ShyftNetwork/RedisBloom/archive/refs/tags/v2.4.5.zip'
     redisbloom_dest: '/opt/RedisBloom'
     nginx_cfg: '/etc/nginx/sites-available/default'
-    php_version: '8.3'
+    php_version: '8.4'
 
   tasks:
     - name: Check if Redis server is installed - Install Redis Bloom Filter

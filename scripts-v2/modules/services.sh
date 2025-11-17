@@ -280,10 +280,15 @@ install_redis_bloom() {
         install_redis
     fi
 
+    # Detect PHP version if not already detected
+    if [ -z "$PHP_VERSION" ]; then
+        detect_php_version || return 1
+    fi
+
     # Configure PHP for large file uploads (needed for bloom filters)
     echo_info "Configuring PHP for bloom filter uploads..."
-    sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
-    sed -i 's/^.*upload_max_filesize.*/upload_max_filesize = 128M/' /etc/php/8.3/fpm/php.ini
+    sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/${PHP_VERSION}/fpm/php.ini
+    sed -i 's/^.*upload_max_filesize.*/upload_max_filesize = 128M/' /etc/php/${PHP_VERSION}/fpm/php.ini
 
     # Configure NGINX for large uploads
     local NGINX_CFG=/etc/nginx/sites-enabled/ta-dashboard.conf
@@ -309,7 +314,7 @@ install_redis_bloom() {
     chown -R $SERVICE_USER .
     su $SERVICE_USER -c "composer update"
 
-    systemctl restart php8.3-fpm
+    systemctl restart php${PHP_VERSION}-fpm
     if [ -f "$NGINX_CFG" ]; then
         systemctl restart nginx
     fi
