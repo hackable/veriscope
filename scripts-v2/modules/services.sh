@@ -46,6 +46,11 @@ full_laravel_setup() {
     local ENVDEST=.env
     portable_sed "s#APP_URL=.*#APP_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
     portable_sed "s#SHYFT_ONBOARDING_URL=.*#SHYFT_ONBOARDING_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
+    portable_sed "s#PUSHER_APP_HOST=.*#PUSHER_APP_HOST=127.0.0.1#g" $ENVDEST
+    portable_sed "s#PUSHER_APP_PORT=.*#PUSHER_APP_PORT=6001#g" $ENVDEST
+    portable_sed "s#REDIS_HOST=.*#REDIS_HOST=127.0.0.1#g" $ENVDEST
+    portable_sed "s#HTTP_API_URL=.*#HTTP_API_URL=http://localhost:8080#g" $ENVDEST
+    portable_sed "s#SHYFT_TEMPLATE_HELPER_URL=.*#SHYFT_TEMPLATE_HELPER_URL=http://localhost:8090#g" $ENVDEST
 
     echo_info "Building Node.js assets..."
     su $SERVICE_USER -c "npm install --legacy-peer-deps"
