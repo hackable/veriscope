@@ -33,7 +33,6 @@
           - vim
           - unzip
           - jq
-          - ntpdate
           - moreutils
           - net-tools
           - postgresql-client
