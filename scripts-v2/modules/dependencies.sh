@@ -18,7 +18,7 @@ refresh_dependencies() {
 	add-apt-repository >/dev/null -yn ppa:ondrej/nginx
 
 	# NodeSource setup script does apt update
-	curl -fsSL https://deb.nodesource.com/setup_14.x | sudo -E bash -
+	curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 

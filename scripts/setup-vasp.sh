@@ -198,11 +198,11 @@ function create_postgres_trustanchor_db {
 
 function refresh_dependencies() {
   apt-get -y  update
-  apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat
+  apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
 	add-apt-repository >/dev/null -yn ppa:ondrej/php
 	add-apt-repository >/dev/null -yn ppa:ondrej/nginx
 	# nodesource's script does an apt update
-	curl -fsSL https://deb.nodesource.com/setup_14.x | sudo -E bash -
+	curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
