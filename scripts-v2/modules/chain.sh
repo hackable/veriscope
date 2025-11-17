@@ -265,3 +265,38 @@ setup_chain_config() {
     echo_info "Chain configuration completed"
     return 0
 }
+
+# ============================================================================
+# UNINSTALL NETHERMIND
+# ============================================================================
+
+uninstall_nethermind() {
+    echo_warn "This will completely remove Nethermind and all blockchain data"
+    echo_warn "This action cannot be undone!"
+    echo ""
+
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "Are you sure you want to continue? (yes/no): " -r confirm
+        echo
+        if [ "$confirm" != "yes" ]; then
+            echo_info "Uninstall cancelled"
+            return 1
+        fi
+    fi
+
+    echo_info "Stopping Nethermind service..."
+    systemctl stop nethermind 2>/dev/null || true
+    systemctl disable nethermind 2>/dev/null || true
+
+    echo_info "Removing Nethermind installation..."
+    rm -rf /opt/nm
+
+    echo_info "Removing systemd service file..."
+    rm -f /etc/systemd/system/nethermind.service
+
+    systemctl daemon-reload
+
+    echo_info "✓ Nethermind uninstalled successfully"
+    return 0
+}

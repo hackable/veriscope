@@ -122,3 +122,39 @@ restore_database() {
         return 1
     fi
 }
+
+# ============================================================================
+# UNINSTALL POSTGRESQL
+# ============================================================================
+
+uninstall_postgresql() {
+    echo_warn "This will completely remove PostgreSQL and all databases"
+    echo_warn "This action cannot be undone!"
+    echo ""
+
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "Are you sure you want to continue? (yes/no): " -r confirm
+        echo
+        if [ "$confirm" != "yes" ]; then
+            echo_info "Uninstall cancelled"
+            return 1
+        fi
+    fi
+
+    echo_info "Stopping PostgreSQL services..."
+    systemctl stop postgresql@17-main 2>/dev/null || true
+    systemctl stop postgresql 2>/dev/null || true
+
+    echo_info "Removing PostgreSQL packages..."
+    apt-get remove --purge -y postgresql postgresql-17 postgresql-client-17 \
+        postgresql-client-common postgresql-common postgresql-common-dev 2>/dev/null || true
+
+    echo_info "Removing data directories..."
+    rm -rf /var/lib/postgresql /etc/postgresql /var/run/postgresql
+
+    systemctl daemon-reload
+
+    echo_info "✓ PostgreSQL uninstalled successfully"
+    return 0
+}
