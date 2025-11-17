@@ -414,15 +414,28 @@ perform_full_install() {
             echo_warn "Address proofs installation failed (continuing...)"
         fi
 
-        if ! refresh_static_nodes; then
-            echo_warn "Static nodes refresh failed (continuing...)"
+        # Wait for Nethermind RPC before refreshing static nodes
+        if wait_for_nethermind_rpc 60; then
+            if ! refresh_static_nodes; then
+                echo_warn "Static nodes refresh failed (continuing...)"
+            fi
+        else
+            echo_warn "Nethermind RPC not ready, skipping static nodes refresh"
+            echo_info "You can run it manually later: ./docker-scripts/setup-docker.sh refresh-static-nodes"
         fi
     else
         # CLI mode: run without error handling
         install_horizon
         install_passport_env
         install_address_proofs
-        refresh_static_nodes
+
+        # Wait for Nethermind RPC before refreshing static nodes
+        if wait_for_nethermind_rpc 60; then
+            refresh_static_nodes
+        else
+            echo_warn "Nethermind RPC not ready, skipping static nodes refresh"
+            echo_info "You can run it manually later: ./docker-scripts/setup-docker.sh refresh-static-nodes"
+        fi
     fi
 
     # Create admin user
