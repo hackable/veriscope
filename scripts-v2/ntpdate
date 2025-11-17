@@ -3,12 +3,13 @@
 # Ubuntu 16.04+ uses systemd-timesyncd by default
 
 # Force systemd-timesyncd to sync time immediately
-if command -v timedatectl >/dev/null 2>&1; then
+if command -v timedatectl >/dev/null 2>&1 && systemctl is-active --quiet systemd-timesyncd; then
     # Restart timesyncd to force immediate sync
-    systemctl restart systemd-timesyncd
+    systemctl restart systemd-timesyncd 2>/dev/null
+elif command -v ntpdate >/dev/null 2>&1; then
+    # Fallback to ntpdate if available
+    ntpdate pool.ntp.org 2>/dev/null
 else
-    # Fallback to ntpdate if available (legacy systems)
-    if command -v ntpdate >/dev/null 2>&1; then
-        ntpdate pool.ntp.org
-    fi
+    # Silent exit if neither is available
+    exit 0
 fi
