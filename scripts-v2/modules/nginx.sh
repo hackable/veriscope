@@ -91,13 +91,8 @@ server {
 }
 NGINX_CONFIG
 
-    # Detect PHP version if not already detected
-    if [ -z "$PHP_VERSION" ]; then
-        detect_php_version || return 1
-    fi
-
     systemctl enable nginx
-    systemctl restart php${PHP_VERSION}-fpm
+    systemctl restart php8.4-fpm
     systemctl restart nginx
 
     echo_info "Nginx configured successfully"

@@ -144,8 +144,8 @@ function install_redis_bloom {
 	 mv /tmp/redis.conf /etc/redis/redis.conf
 	 systemctl restart redis-server
 
-	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/${PHP_VERSION}/fpm/php.ini
-	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/${PHP_VERSION}/fpm/php.ini
+	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.4/fpm/php.ini
+	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/8.4/fpm/php.ini
 	 if grep -q client_max_body_size $NGINX_CFG; then
     echo "NGINX config already has been already updated"
 	 else
@@ -164,7 +164,7 @@ function install_redis_bloom {
  	 chown -R $SERVICE_USER .
 	 su $SERVICE_USER -c "composer update"
 
-	 systemctl restart php${PHP_VERSION}-fpm
+	 systemctl restart php8.4-fpm
  	 systemctl restart nginx
 
 	else
@@ -223,24 +223,8 @@ function refresh_dependencies() {
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
-	# Detect latest available PHP version (8.5 > 8.4)
-	# Only PHP 8.4+ is supported
-	PHP_VERSION=""
-	for version in 8.5 8.4; do
-		if apt-cache search php${version}-fpm | grep -q "php${version}-fpm"; then
-			PHP_VERSION="$version"
-			echo_info "Detected PHP $PHP_VERSION available"
-			break
-		fi
-	done
-
-	if [ -z "$PHP_VERSION" ]; then
-		echo_error "No compatible PHP version found (requires PHP 8.4 or higher)"
-		echo_error "Please add ondrej/php PPA or use Ubuntu 25.04+"
-		return 1
-	fi
-
-	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php${PHP_VERSION}-fpm php${PHP_VERSION}-dom php${PHP_VERSION}-zip php${PHP_VERSION}-mbstring php${PHP_VERSION}-curl php${PHP_VERSION}-gd php${PHP_VERSION}-imagick php${PHP_VERSION}-pgsql php${PHP_VERSION}-gmp php${PHP_VERSION}-redis nodejs build-essential postgresql nginx pwgen certbot
+	# Install PHP 8.4 and required packages
+	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php8.4-fpm php8.4-dom php8.4-zip php8.4-mbstring php8.4-curl php8.4-gd php8.4-imagick php8.4-pgsql php8.4-gmp php8.4-redis nodejs build-essential postgresql nginx pwgen certbot
 	apt-get install -y protobuf-compiler libtiff5-dev libjpeg8-dev libopenjp2-7-dev zlib1g-dev \
     libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk python3-pip \
     libharfbuzz-dev libfribidi-dev libxcb1-dev
@@ -452,7 +436,7 @@ function setup_nginx {
 	} ' >$NGINX_CFG
 
 	systemctl enable nginx
-	systemctl restart php${PHP_VERSION}-fpm
+	systemctl restart php8.4-fpm
 	systemctl restart nginx
 }
 

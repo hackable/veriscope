@@ -37,31 +37,6 @@ portable_sed() {
 }
 
 # ============================================================================
-# PHP VERSION DETECTION
-# ============================================================================
-
-# Global variable to store detected PHP version
-PHP_VERSION=""
-
-# Detect installed PHP version (8.5 > 8.4)
-detect_php_version() {
-    if [ -n "$PHP_VERSION" ]; then
-        return 0
-    fi
-
-    for version in 8.5 8.4; do
-        if command -v php${version} >/dev/null 2>&1 || apt-cache search php${version}-fpm 2>/dev/null | grep -q "php${version}-fpm"; then
-            PHP_VERSION="$version"
-            echo_info "Detected PHP $PHP_VERSION"
-            return 0
-        fi
-    done
-
-    echo_error "No compatible PHP version found (requires PHP 8.4 or higher)"
-    return 1
-}
-
-# ============================================================================
 # SECRET GENERATION
 # ============================================================================
 
