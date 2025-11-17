@@ -200,10 +200,20 @@ function refresh_dependencies() {
   apt-get -y  update
   apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd bc lsb-release
 
-	# Try to add PPAs (may not be available for very new Ubuntu versions)
-	echo_info "Adding ondrej/php and ondrej/nginx PPAs..."
-	add-apt-repository -y ppa:ondrej/php || echo_warn "ondrej/php PPA not available, using default repos"
-	add-apt-repository -y ppa:ondrej/nginx || echo_warn "ondrej/nginx PPA not available, using default repos"
+	# Check Ubuntu version to determine if PPAs are needed
+	local ubuntu_version=$(lsb_release -rs 2>/dev/null || echo "24.04")
+	local ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "unknown")
+	echo_info "Detected Ubuntu $ubuntu_version ($ubuntu_codename)"
+
+	# Only add PPAs for Ubuntu versions known to be supported (< 25.04)
+	# Newer Ubuntu versions ship with PHP 8.3 in default repos
+	if [ "$(echo "$ubuntu_version < 25.00" | bc 2>/dev/null || echo 0)" -eq 1 ]; then
+		echo_info "Adding ondrej/php and ondrej/nginx PPAs..."
+		add-apt-repository -y ppa:ondrej/php || echo_warn "Failed to add ondrej/php PPA"
+		add-apt-repository -y ppa:ondrej/nginx || echo_warn "Failed to add ondrej/nginx PPA"
+	else
+		echo_info "Skipping PPAs (Ubuntu $ubuntu_version has PHP 8.3 in default repos)"
+	fi
 
 	# Update package lists after adding PPAs
 	apt-get -y update
