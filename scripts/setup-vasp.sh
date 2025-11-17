@@ -223,13 +223,19 @@ function refresh_dependencies() {
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
-	# Detect available PHP version (8.3 from PPA or 8.4+ from Ubuntu 25+)
-	local php_version="8.3"
-	if apt-cache search php8.4-fpm | grep -q "php8.4-fpm"; then
-		php_version="8.4"
-		echo_info "Using PHP $php_version (Ubuntu default)"
-	else
-		echo_info "Using PHP $php_version (from PPA)"
+	# Detect latest available PHP version (8.5 > 8.4 > 8.3)
+	local php_version=""
+	for version in 8.5 8.4 8.3; do
+		if apt-cache search php${version}-fpm | grep -q "php${version}-fpm"; then
+			php_version="$version"
+			echo_info "Detected PHP $php_version available"
+			break
+		fi
+	done
+
+	if [ -z "$php_version" ]; then
+		echo_error "No compatible PHP version found (8.3, 8.4, or 8.5)"
+		return 1
 	fi
 
 	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php${php_version}-fpm php${php_version}-dom php${php_version}-zip php${php_version}-mbstring php${php_version}-curl php${php_version}-gd php${php_version}-imagick php${php_version}-pgsql php${php_version}-gmp php${php_version}-redis nodejs build-essential postgresql nginx pwgen certbot
