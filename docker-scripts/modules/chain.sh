@@ -107,6 +107,55 @@ check_blockchain_sync() {
     fi
 }
 
+# Wait for Nethermind RPC to be ready
+# Polls the RPC endpoint until it responds or timeout is reached
+# Usage: wait_for_nethermind_rpc [timeout_seconds]
+# Returns: 0 if ready, 1 if timeout
+wait_for_nethermind_rpc() {
+    local timeout="${1:-60}"
+    local elapsed=0
+    local interval=5
+
+    echo_info "Waiting for Nethermind RPC to be ready..."
+
+    # Check if Nethermind container is running
+    if ! docker compose -f "$COMPOSE_FILE" ps nethermind 2>/dev/null | grep -q "Up"; then
+        echo_error "Nethermind container not running"
+        return 1
+    fi
+
+    # Get project name and network for Docker networking
+    local project_name=$(get_project_name)
+    local network_name="${project_name}_veriscope"
+
+    # Verify network exists
+    if ! docker network inspect "$network_name" >/dev/null 2>&1; then
+        echo_error "Docker network '$network_name' not found"
+        return 1
+    fi
+
+    while [ $elapsed -lt $timeout ]; do
+        # Try to query Nethermind RPC
+        local response=$(docker run --rm --network "$network_name" alpine sh -c \
+            'apk add -q curl jq >/dev/null 2>&1 && curl -m 5 -s -X POST -H "Content-Type: application/json" \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"web3_clientVersion\",\"params\":[]}" \
+            http://nethermind:8545/ | jq -r .result' 2>/dev/null)
+
+        if [ ! -z "$response" ] && [ "$response" != "null" ]; then
+            echo_info "✓ Nethermind RPC is ready (${elapsed}s elapsed)"
+            echo_info "  Client: $response"
+            return 0
+        fi
+
+        sleep $interval
+        elapsed=$((elapsed + interval))
+        echo_info "  Waiting... (${elapsed}s / ${timeout}s)"
+    done
+
+    echo_warn "⚠ Nethermind RPC did not respond within ${timeout}s"
+    return 1
+}
+
 # ============================================================================
 # NETWORK CONFIGURATION
 # ============================================================================
@@ -460,9 +509,24 @@ refresh_static_nodes() {
         return 1
     fi
 
-    # Query Nethermind for node info using internal Docker network
+    # Query Nethermind for node info using internal Docker network with retry logic
     # Run curl from a temporary Alpine container with access to the internal network
-    local enode=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"admin_nodeInfo\", \"params\":[]}" http://nethermind:8545/ | jq -r .result.enode' 2>/dev/null)
+    local enode=""
+    local max_retries=3
+    local retry_delay=5
+
+    for attempt in $(seq 1 $max_retries); do
+        enode=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq >/dev/null 2>&1 && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"admin_nodeInfo\", \"params\":[]}" http://nethermind:8545/ | jq -r .result.enode' 2>/dev/null)
+
+        if [ ! -z "$enode" ] && [ "$enode" != "null" ]; then
+            break
+        fi
+
+        if [ $attempt -lt $max_retries ]; then
+            echo_info "  Attempt $attempt/$max_retries failed, retrying in ${retry_delay}s..."
+            sleep $retry_delay
+        fi
+    done
 
     if [ ! -z "$enode" ] && [ "$enode" != "null" ]; then
         echo_info "This node's enode: $enode"
@@ -476,7 +540,7 @@ refresh_static_nodes() {
 
         echo_info "Updated NETHERMIND_ETHSTATS_CONTACT in .env"
     else
-        echo_warn "Could not retrieve enode information from Nethermind"
+        echo_warn "Could not retrieve enode information from Nethermind after $max_retries attempts"
     fi
 
     # Ask user if they want to restart Nethermind and clear peer database
