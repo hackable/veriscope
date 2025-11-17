@@ -14,8 +14,11 @@ refresh_dependencies() {
 	echo_info "Updating system dependencies..."
 	apt-get -y update
 	apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
-	add-apt-repository >/dev/null -yn ppa:ondrej/php
-	add-apt-repository >/dev/null -yn ppa:ondrej/nginx
+	add-apt-repository -y ppa:ondrej/php
+	add-apt-repository -y ppa:ondrej/nginx
+
+	# Update package lists after adding PPAs
+	apt-get -y update
 
 	# NodeSource setup script does apt update
 	curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -23,7 +26,7 @@ refresh_dependencies() {
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
 	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install \
-		vim git libsnappy-dev libc6-dev libc6 unzip make jq ntpdate moreutils \
+		vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils \
 		php8.3-fpm php8.3-dom php8.3-zip php8.3-mbstring php8.3-curl php8.3-gd php8.3-imagick \
 		php8.3-pgsql php8.3-gmp php8.3-redis nodejs build-essential postgresql nginx pwgen certbot
 
