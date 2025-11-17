@@ -102,7 +102,7 @@ echo "+ Service user will be $SERVICE_USER"
 function create_sealer_pk {
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
 
-	su $SERVICE_USER -c "npm install web3 dotenv"
+	su $SERVICE_USER -c "npm install --legacy-peer-deps web3 dotenv"
 	local OUTPUT=$(node -e 'require("./create-account").trustAnchorCreateAccount()')
 	SEALERACCT=$(echo $OUTPUT | jq -r '.address')
 	SEALERPK=$(echo $OUTPUT | jq -r '.privateKey');
@@ -449,7 +449,7 @@ function install_or_update_nodejs {
 	chown -R $SERVICE_USER $INSTALL_ROOT/veriscope_ta_node
 
 	pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
-	su $SERVICE_USER -c "npm install"
+	su $SERVICE_USER -c "npm install --legacy-peer-deps"
 	popd >/dev/null
 
 	pushd >/dev/null $INSTALL_ROOT/
@@ -485,7 +485,7 @@ function install_or_update_laravel {
 	regenerate_webhook_secret;
 
 	echo "Setting up node.js elements of PHP application..."
-	su $SERVICE_USER -c "npm install"
+	su $SERVICE_USER -c "npm install --legacy-peer-deps"
 	su $SERVICE_USER -c "npm run development"
 
 	echo "Setting up PHP and deploying..."

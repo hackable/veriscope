@@ -15,7 +15,7 @@ create_sealer_keypair() {
 
     pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
 
-    su $SERVICE_USER -c "npm install web3 dotenv"
+    su $SERVICE_USER -c "npm install --legacy-peer-deps web3 dotenv"
     local OUTPUT=$(node -e 'require("./create-account").trustAnchorCreateAccount()')
     SEALERACCT=$(echo $OUTPUT | jq -r '.address')
     SEALERPK=$(echo $OUTPUT | jq -r '.privateKey');
