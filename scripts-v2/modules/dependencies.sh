@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/helpers.sh"
 refresh_dependencies() {
 	echo_info "Updating system dependencies..."
 	apt-get -y update
-	apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
+	apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd bc lsb-release
 
 	# Try to add PPAs (may not be available for very new Ubuntu versions)
 	echo_info "Adding ondrej/php and ondrej/nginx PPAs..."
