@@ -381,9 +381,9 @@ menu() {
 			echo_warn "This will uninstall ALL services: Redis, PostgreSQL, and Nethermind"
 			echo_warn "All data will be permanently deleted!"
 			echo ""
-			read -p "Are you absolutely sure? (type 'yes' to confirm): " -r confirm
+			read -p "Are you absolutely sure? (Y/n): " -r confirm
 			echo
-			if [ "$confirm" = "yes" ]; then
+			if [[ ! "$confirm" =~ ^[Nn]$ ]]; then
 				uninstall_redis
 				uninstall_postgresql
 				uninstall_nethermind

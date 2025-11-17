@@ -357,9 +357,9 @@ uninstall_redis() {
 
     # Check if running interactively
     if [ -t 0 ]; then
-        read -p "Are you sure you want to continue? (yes/no): " -r confirm
+        read -p "Are you sure you want to continue? (Y/n): " -r confirm
         echo
-        if [ "$confirm" != "yes" ]; then
+        if [[ "$confirm" =~ ^[Nn]$ ]]; then
             echo_info "Uninstall cancelled"
             return 1
         fi
