@@ -55,7 +55,7 @@ install_or_update_nethermind() {
                 "Enabled": true,
                 "Host": "0.0.0.0",
                 "Port": 8545,
-                "EnabledModules": ["Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
+                "EnabledModules": ["Admin", "Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
             },
             "Aura": {
                 "ForceSealing": true,
