@@ -16,7 +16,7 @@ install_or_update_nodejs() {
     chown -R $SERVICE_USER $INSTALL_ROOT/veriscope_ta_node
 
     pushd >/dev/null $INSTALL_ROOT/veriscope_ta_node
-    su $SERVICE_USER -c "npm install"
+    su $SERVICE_USER -c "npm install --legacy-peer-deps"
     popd >/dev/null
 
     if ! test -s "/etc/systemd/system/ta-node-1.service"; then
@@ -48,7 +48,7 @@ full_laravel_setup() {
     portable_sed "s#SHYFT_ONBOARDING_URL=.*#SHYFT_ONBOARDING_URL=https://$VERISCOPE_SERVICE_HOST#g" $ENVDEST
 
     echo_info "Building Node.js assets..."
-    su $SERVICE_USER -c "npm install"
+    su $SERVICE_USER -c "npm install --legacy-peer-deps"
     su $SERVICE_USER -c "npm run development"
 
     echo_info "Installing PHP dependencies..."
@@ -135,7 +135,7 @@ clear_cache() {
 install_node_deps() {
     echo_info "Installing Node.js dependencies..."
     pushd >/dev/null $INSTALL_ROOT/veriscope_ta_dashboard
-    su $SERVICE_USER -c "npm install"
+    su $SERVICE_USER -c "npm install --legacy-peer-deps"
     su $SERVICE_USER -c "npm run development"
     popd >/dev/null
     echo_info "Node.js dependencies installed"
