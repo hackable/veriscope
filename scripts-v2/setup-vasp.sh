@@ -196,7 +196,7 @@ full_install() {
 menu() {
 	echo ""
 	echo "================================"
-	echo "Veriscope Docker Management"
+	echo "Veriscope Bare-Metal Management"
 	echo "================================"
 	echo ""
 	echo "Setup & Installation:"
@@ -245,6 +245,12 @@ menu() {
 	echo "Backup & Restore:"
 	echo "  b) Backup database"
 	echo "  t) Restore database"
+	echo ""
+	echo "Uninstall:"
+	echo "  ur) Uninstall Redis"
+	echo "  up) Uninstall PostgreSQL"
+	echo "  un) Uninstall Nethermind"
+	echo "  ua) Uninstall All (Redis, PostgreSQL, Nethermind)"
 	echo ""
 	echo "  x) Exit"
 	echo ""
@@ -361,6 +367,30 @@ menu() {
 			echo -n "Enter backup file path: "
 			read -r backup_file
 			restore_database "$backup_file"
+			;;
+		ur)
+			uninstall_redis
+			;;
+		up)
+			uninstall_postgresql
+			;;
+		un)
+			uninstall_nethermind
+			;;
+		ua)
+			echo_warn "This will uninstall ALL services: Redis, PostgreSQL, and Nethermind"
+			echo_warn "All data will be permanently deleted!"
+			echo ""
+			read -p "Are you absolutely sure? (type 'yes' to confirm): " -r confirm
+			echo
+			if [ "$confirm" = "yes" ]; then
+				uninstall_redis
+				uninstall_postgresql
+				uninstall_nethermind
+				echo_info "All services uninstalled"
+			else
+				echo_info "Uninstall cancelled"
+			fi
 			;;
 		x)
 			echo_info "Exiting..."

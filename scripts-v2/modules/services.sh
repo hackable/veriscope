@@ -345,3 +345,38 @@ install_redis_bloom() {
     echo_info ""
     return 0
 }
+
+# ============================================================================
+# UNINSTALL REDIS
+# ============================================================================
+
+uninstall_redis() {
+    echo_warn "This will completely remove Redis Stack Server and all data"
+    echo_warn "This action cannot be undone!"
+    echo ""
+
+    # Check if running interactively
+    if [ -t 0 ]; then
+        read -p "Are you sure you want to continue? (yes/no): " -r confirm
+        echo
+        if [ "$confirm" != "yes" ]; then
+            echo_info "Uninstall cancelled"
+            return 1
+        fi
+    fi
+
+    echo_info "Stopping and disabling Redis Stack Server..."
+    systemctl stop redis-stack-server 2>/dev/null || true
+    systemctl disable redis-stack-server 2>/dev/null || true
+
+    echo_info "Removing Redis Stack Server packages..."
+    apt-get remove --purge -y redis-stack-server 2>/dev/null || true
+
+    echo_info "Removing data directories..."
+    rm -rf /var/lib/redis /etc/redis /var/lib/redis-stack
+
+    systemctl daemon-reload
+
+    echo_info "✓ Redis Stack Server uninstalled successfully"
+    return 0
+}
