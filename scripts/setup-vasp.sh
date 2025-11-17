@@ -144,8 +144,8 @@ function install_redis_bloom {
 	 mv /tmp/redis.conf /etc/redis/redis.conf
 	 systemctl restart redis-server
 
-	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/8.3/fpm/php.ini
-	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/8.3/fpm/php.ini
+	 sed -i 's/^.*post_max_size.*/post_max_size = 128M/' /etc/php/${PHP_VERSION}/fpm/php.ini
+	 sed -i 's/^.*upload_max_filesize .*/upload_max_filesize = 128M/'  /etc/php/${PHP_VERSION}/fpm/php.ini
 	 if grep -q client_max_body_size $NGINX_CFG; then
     echo "NGINX config already has been already updated"
 	 else
@@ -164,7 +164,7 @@ function install_redis_bloom {
  	 chown -R $SERVICE_USER .
 	 su $SERVICE_USER -c "composer update"
 
-	 systemctl restart php8.3-fpm
+	 systemctl restart php${PHP_VERSION}-fpm
  	 systemctl restart nginx
 
 	else
@@ -206,13 +206,13 @@ function refresh_dependencies() {
 	echo_info "Detected Ubuntu $ubuntu_version ($ubuntu_codename)"
 
 	# Only add PPAs for Ubuntu versions known to be supported (< 25.04)
-	# Newer Ubuntu versions ship with PHP 8.3 in default repos
+	# Newer Ubuntu versions ship with PHP 8.4 in default repos
 	if [ "$(echo "$ubuntu_version < 25.00" | bc 2>/dev/null || echo 0)" -eq 1 ]; then
 		echo_info "Adding ondrej/php and ondrej/nginx PPAs..."
 		add-apt-repository -y ppa:ondrej/php || echo_warn "Failed to add ondrej/php PPA"
 		add-apt-repository -y ppa:ondrej/nginx || echo_warn "Failed to add ondrej/nginx PPA"
 	else
-		echo_info "Skipping PPAs (Ubuntu $ubuntu_version has PHP 8.3 in default repos)"
+		echo_info "Skipping PPAs (Ubuntu $ubuntu_version has PHP 8.4 in default repos)"
 	fi
 
 	# Update package lists after adding PPAs
@@ -223,22 +223,24 @@ function refresh_dependencies() {
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
-	# Detect latest available PHP version (8.5 > 8.4 > 8.3)
-	local php_version=""
-	for version in 8.5 8.4 8.3; do
+	# Detect latest available PHP version (8.5 > 8.4)
+	# Only PHP 8.4+ is supported
+	PHP_VERSION=""
+	for version in 8.5 8.4; do
 		if apt-cache search php${version}-fpm | grep -q "php${version}-fpm"; then
-			php_version="$version"
-			echo_info "Detected PHP $php_version available"
+			PHP_VERSION="$version"
+			echo_info "Detected PHP $PHP_VERSION available"
 			break
 		fi
 	done
 
-	if [ -z "$php_version" ]; then
-		echo_error "No compatible PHP version found (8.3, 8.4, or 8.5)"
+	if [ -z "$PHP_VERSION" ]; then
+		echo_error "No compatible PHP version found (requires PHP 8.4 or higher)"
+		echo_error "Please add ondrej/php PPA or use Ubuntu 25.04+"
 		return 1
 	fi
 
-	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php${php_version}-fpm php${php_version}-dom php${php_version}-zip php${php_version}-mbstring php${php_version}-curl php${php_version}-gd php${php_version}-imagick php${php_version}-pgsql php${php_version}-gmp php${php_version}-redis nodejs build-essential postgresql nginx pwgen certbot
+	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php${PHP_VERSION}-fpm php${PHP_VERSION}-dom php${PHP_VERSION}-zip php${PHP_VERSION}-mbstring php${PHP_VERSION}-curl php${PHP_VERSION}-gd php${PHP_VERSION}-imagick php${PHP_VERSION}-pgsql php${PHP_VERSION}-gmp php${PHP_VERSION}-redis nodejs build-essential postgresql nginx pwgen certbot
 	apt-get install -y protobuf-compiler libtiff5-dev libjpeg8-dev libopenjp2-7-dev zlib1g-dev \
     libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk python3-pip \
     libharfbuzz-dev libfribidi-dev libxcb1-dev
@@ -450,7 +452,7 @@ function setup_nginx {
 	} ' >$NGINX_CFG
 
 	systemctl enable nginx
-	systemctl restart php8.3-fpm
+	systemctl restart php${PHP_VERSION}-fpm
 	systemctl restart nginx
 }
 

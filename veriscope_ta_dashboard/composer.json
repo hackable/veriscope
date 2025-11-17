@@ -38,7 +38,7 @@
       }
     ],
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "abagayev/laravel-migration-shortcuts": "*",
         "asantibanez/laravel-eloquent-state-machines": "dev-master",
         "bacon/bacon-qr-code": "^2.0",
