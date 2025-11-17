@@ -6,6 +6,15 @@
     redis_stack_version: "7.2.0-v9"
   tasks:
 
+    # Determine Ubuntu codename for Redis repository
+    - name: Map Ubuntu codename for Redis repository
+      ansible.builtin.set_fact:
+        redis_codename: "{{ 'noble' if ansible_distribution_release in ['questing', 'plucky', 'oracular'] else ansible_distribution_release }}"
+
+    - name: Display Redis repository codename
+      ansible.builtin.debug:
+        msg: "Using Redis repository for Ubuntu {{ redis_codename }}{{ ' (mapped from ' + ansible_distribution_release + ')' if redis_codename != ansible_distribution_release else '' }}"
+
     # Add Redis Stack repository
     - name: Add Redis GPG key
       ansible.builtin.shell:
@@ -14,7 +23,7 @@
 
     - name: Add Redis Stack repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb {{ ansible_distribution_release }} main"
+        repo: "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb {{ redis_codename }} main"
         state: present
         filename: redis
 
