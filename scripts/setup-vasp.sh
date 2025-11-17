@@ -199,14 +199,18 @@ function create_postgres_trustanchor_db {
 function refresh_dependencies() {
   apt-get -y  update
   apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
-	add-apt-repository >/dev/null -yn ppa:ondrej/php
-	add-apt-repository >/dev/null -yn ppa:ondrej/nginx
+	add-apt-repository -y ppa:ondrej/php
+	add-apt-repository -y ppa:ondrej/nginx
+
+	# Update package lists after adding PPAs
+	apt-get -y update
+
 	# nodesource's script does an apt update
 	curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
-	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq ntpdate moreutils php8.3-fpm php8.3-dom php8.3-zip php8.3-mbstring php8.3-curl php8.3-dom php8.3-gd php8.3-imagick php8.3-pgsql php8.3-gmp php8.3-redis php8.3-mbstring nodejs build-essential postgresql nginx pwgen certbot
+	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install  vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils php8.3-fpm php8.3-dom php8.3-zip php8.3-mbstring php8.3-curl php8.3-gd php8.3-imagick php8.3-pgsql php8.3-gmp php8.3-redis nodejs build-essential postgresql nginx pwgen certbot
 	apt-get install -y protobuf-compiler libtiff5-dev libjpeg8-dev libopenjp2-7-dev zlib1g-dev \
     libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk python3-pip \
     libharfbuzz-dev libfribidi-dev libxcb1-dev
