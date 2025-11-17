@@ -423,26 +423,14 @@ refresh_static_nodes() {
 
     echo_info "Querying ethstats at $ethstats_get_enodes..."
 
-    # Check if wscat is available
-    if ! command -v wscat &> /dev/null; then
-        echo_warn "wscat not found. Installing..."
-        if command -v npm &> /dev/null; then
-            npm install -g wscat
-        else
-            echo_error "npm not found. Cannot install wscat."
-            echo_info "Please install Node.js/npm or wscat manually"
-            return 1
-        fi
-    fi
-
     # Create temporary file for static nodes
     local temp_file=$(mktemp)
     local static_nodes_file="chains/$VERISCOPE_TARGET/static-nodes.json"
 
     echo_info "Fetching current enode list from ethstats..."
 
-    # Query ethstats for current nodes using Alpine container (macOS compatible)
-    # This uses wscat + grep approach, running in Alpine where grep -P works
+    # Query ethstats for current nodes using Docker container with wscat
+    # This uses wscat + grep approach, running in node:alpine where all tools are available
     # Key: Must wait after connecting before sending ready message to receive init response
     local nodes_json=$(docker run --rm node:alpine sh -c "
         npm install -g wscat > /dev/null 2>&1
