@@ -198,7 +198,7 @@ function create_postgres_trustanchor_db {
 
 function refresh_dependencies() {
   apt-get -y  update
-  apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
+  apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd bc lsb-release
 
 	# Try to add PPAs (may not be available for very new Ubuntu versions)
 	echo_info "Adding ondrej/php and ondrej/nginx PPAs..."
