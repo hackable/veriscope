@@ -430,9 +430,9 @@ refresh_static_nodes() {
     echo_info "Fetching current enode list from ethstats..."
 
     # Query ethstats for current nodes using Docker container with wscat
-    # This uses wscat + grep approach, running in node:alpine where all tools are available
+    # This uses wscat + grep approach, running in node:22-alpine where all tools are available
     # Key: Must wait after connecting before sending ready message to receive init response
-    local nodes_json=$(docker run --rm node:alpine sh -c "
+    local nodes_json=$(docker run --rm node:22-alpine sh -c "
         npm install -g wscat > /dev/null 2>&1
         apk add --no-cache jq grep coreutils > /dev/null 2>&1
 
