@@ -38,10 +38,19 @@ refresh_dependencies() {
 
 	DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
+	# Detect available PHP version (8.3 from PPA or 8.4+ from Ubuntu 25+)
+	local php_version="8.3"
+	if apt-cache search php8.4-fpm | grep -q "php8.4-fpm"; then
+		php_version="8.4"
+		echo_info "Using PHP $php_version (Ubuntu default)"
+	else
+		echo_info "Using PHP $php_version (from PPA)"
+	fi
+
 	DEBIAN_FRONTEND=noninteractive apt-get -qq -y -o Acquire::https::AllowRedirect=false install \
 		vim git libsnappy-dev libc6-dev libc6 unzip make jq moreutils \
-		php8.3-fpm php8.3-dom php8.3-zip php8.3-mbstring php8.3-curl php8.3-gd php8.3-imagick \
-		php8.3-pgsql php8.3-gmp php8.3-redis nodejs build-essential postgresql nginx pwgen certbot
+		php${php_version}-fpm php${php_version}-dom php${php_version}-zip php${php_version}-mbstring php${php_version}-curl php${php_version}-gd php${php_version}-imagick \
+		php${php_version}-pgsql php${php_version}-gmp php${php_version}-redis nodejs build-essential postgresql nginx pwgen certbot
 
 	apt-get install -y protobuf-compiler libtiff5-dev libjpeg8-dev libopenjp2-7-dev zlib1g-dev \
 		libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python3-tk python3-pip \
