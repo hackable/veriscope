@@ -16,8 +16,8 @@
         state: present
         update_cache: false
     
-    - name: Run nodejs 18.x source script
-      shell: curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    - name: Run nodejs 22.x source script
+      shell: curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
       args:
         executable: /bin/bash
     
