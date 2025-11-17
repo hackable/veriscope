@@ -37,7 +37,6 @@
           - vim
           - unzip
           - jq
-          - ntpdate
           - moreutils
           - python3-pip
           - python3-setuptools
