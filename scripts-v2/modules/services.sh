@@ -240,15 +240,16 @@ install_redis() {
     # Add Redis Stack repository if not already added
     if [ ! -f /usr/share/keyrings/redis-archive-keyring.gpg ]; then
         # Determine Ubuntu codename for Redis repository
-        local ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "noble")
+        local ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
         local redis_codename="$ubuntu_codename"
 
-        # Map unsupported Ubuntu versions to the latest LTS (noble/24.04)
-        # Redis repository typically only supports LTS releases
+        # Map unsupported Ubuntu versions to jammy (22.04 LTS)
+        # Redis Stack is only available up to Ubuntu 22.04 (jammy), not 24.04+
+        # Using jammy packages works fine on newer Ubuntu versions
         case "$ubuntu_codename" in
-            questing|plucky|oracular)
-                redis_codename="noble"
-                echo_info "Ubuntu $ubuntu_codename detected, using Redis packages from noble (24.04 LTS)"
+            questing|plucky|oracular|noble)
+                redis_codename="jammy"
+                echo_info "Ubuntu $ubuntu_codename detected, using Redis Stack packages from jammy (22.04 LTS)"
                 ;;
         esac
 

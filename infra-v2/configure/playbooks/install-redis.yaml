@@ -7,13 +7,15 @@
   tasks:
 
     # Determine Ubuntu codename for Redis repository
+    # Redis Stack is only available up to Ubuntu 22.04 (jammy), not 24.04+
+    # Using jammy packages works fine on newer Ubuntu versions
     - name: Map Ubuntu codename for Redis repository
       ansible.builtin.set_fact:
-        redis_codename: "{{ 'noble' if ansible_distribution_release in ['questing', 'plucky', 'oracular'] else ansible_distribution_release }}"
+        redis_codename: "{{ 'jammy' if ansible_distribution_release in ['questing', 'plucky', 'oracular', 'noble'] else ansible_distribution_release }}"
 
     - name: Display Redis repository codename
       ansible.builtin.debug:
-        msg: "Using Redis repository for Ubuntu {{ redis_codename }}{{ ' (mapped from ' + ansible_distribution_release + ')' if redis_codename != ansible_distribution_release else '' }}"
+        msg: "Using Redis Stack repository for Ubuntu {{ redis_codename }}{{ ' (mapped from ' + ansible_distribution_release + ')' if redis_codename != ansible_distribution_release else '' }}"
 
     # Add Redis Stack repository
     - name: Add Redis GPG key
