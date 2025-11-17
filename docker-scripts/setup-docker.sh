@@ -331,12 +331,6 @@ perform_full_install() {
         abort_install "Failed to build images"
     fi
 
-    # Step 6: Create sealer keypair
-    step_info "Creating sealer keypair..."
-    if ! create_sealer_keypair; then
-        abort_install "Failed to create sealer keypair"
-    fi
-
     # Step 6: SSL certificate (optional)
     if [ "$interactive" = "true" ]; then
         step_info "Obtaining SSL certificate..."
@@ -374,7 +368,13 @@ perform_full_install() {
         abort_install "Failed to setup chain config"
     fi
 
-    # Step 10: Start services
+    # Step 10: Create sealer keypair
+    step_info "Creating sealer keypair..."
+    if ! create_sealer_keypair; then
+        abort_install "Failed to create sealer keypair"
+    fi
+
+    # Step 11: Start services
     step_info "Starting services..."
     if ! start_services; then
         abort_install "Failed to start services"
