@@ -163,11 +163,13 @@ full_install() {
 
 	# Installation steps
 	refresh_dependencies
+	setup_chain_config
 	install_or_update_nethermind
 	create_postgres_trustanchor_db
 	install_redis
 	setup_or_renew_ssl
 	setup_nginx
+	create_sealer_keypair
 	install_or_update_nodejs
 	full_laravel_setup
 	install_horizon
