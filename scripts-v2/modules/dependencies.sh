@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/helpers.sh"
 refresh_dependencies() {
 	echo_info "Updating system dependencies..."
 	apt-get -y update
-	apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat
+	apt-get install -y software-properties-common curl sudo wget build-essential systemd netcat-openbsd
 	add-apt-repository >/dev/null -yn ppa:ondrej/php
 	add-apt-repository >/dev/null -yn ppa:ondrej/nginx
 
