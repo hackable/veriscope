@@ -437,7 +437,9 @@ refresh_static_nodes() {
         apk add --no-cache jq grep coreutils > /dev/null 2>&1
 
         # Send ready message after brief delay, capture response, extract enodes from contact field
+        # Note: wscat adds '> ' prefix to echoed input lines, must strip before jq parsing
         (sleep 2 && echo '{\"emit\":[\"ready\"]}' && sleep 5) | timeout 10 wscat --connect '$ethstats_get_enodes' 2>/dev/null | \
+            sed 's/^> //' | \
             jq -c 'select(.emit[1].nodes != null) | .emit[1].nodes[].info.contact' 2>/dev/null | \
             grep '^\"enode://' | \
             jq -s '.'

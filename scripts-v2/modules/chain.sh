@@ -109,7 +109,9 @@ refresh_static_nodes() {
     local TEMP_FILE=$(mktemp)
 
     # Fetch enodes from ethstats and parse properly
+    # Note: wscat adds '> ' prefix to echoed input lines, must strip before jq parsing
     (sleep 2 && echo '{"emit":["ready"]}' && sleep 5) | timeout 10 wscat --connect $ETHSTATS_GET_ENODES 2>/dev/null | \
+        sed 's/^> //' | \
         jq -c 'select(.emit[1].nodes != null) | .emit[1].nodes[].info.contact' 2>/dev/null | \
         grep '^"enode://' | \
         jq -s '.' > $TEMP_FILE
