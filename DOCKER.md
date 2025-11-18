@@ -16,7 +16,7 @@ The Veriscope project uses a modern microservices Docker architecture with separ
 │  ┌─────────────┐         ┌──────────────┐                   │
 │  │   nginx     │────────▶│     app      │                   │
 │  │  (proxy)    │         │  (Laravel)   │                   │
-│  │  Port 80    │         │   PHP 8.3    │                   │
+│  │  Port 80    │         │   PHP 8.4    │                   │
 │  │  Port 443   │         │              │                   │
 │  └─────────────┘         └──────────────┘                   │
 │         │                        │                            │
@@ -50,7 +50,7 @@ The Veriscope project uses a modern microservices Docker architecture with separ
 | Container | Image | Purpose | Exposed Ports |
 |-----------|-------|---------|---------------|
 | **nginx** | nginx:alpine | Reverse proxy, SSL termination | 80, 443 |
-| **app** | Custom (PHP 8.3, Ubuntu 22.04) | Laravel dashboard & API | Internal only |
+| **app** | Custom (PHP 8.4, Ubuntu 22.04) | Laravel dashboard & API | Internal only |
 | **ta-node** | Custom (Node 18 Alpine) | Trust Anchor service, Bull Arena | Internal only |
 | **postgres** | postgres:12-alpine | Database | Internal only |
 | **redis** | redis/redis-stack:latest | Cache, queues, RedisBloom | Internal only |
@@ -566,7 +566,7 @@ docker network inspect veriscope --format '{{range .Containers}}{{.Name}} - {{.I
 **Dockerfile**: `veriscope_ta_dashboard/docker/8.0/Dockerfile`
 
 **Base**: Ubuntu 22.04
-**Runtime**: PHP 8.3 with extensions
+**Runtime**: PHP 8.4 with extensions
 **Build**: Copies Laravel code at build time
 
 ```bash
@@ -580,14 +580,14 @@ docker compose build --no-cache app
 docker compose build --progress=plain app
 ```
 
-**PHP 8.3 Extensions Included**:
+**PHP 8.4 Extensions Included**:
 ```
-php8.3-apcu      php8.3-bcmath    php8.3-cli       php8.3-curl
-php8.3-dev       php8.3-gd        php8.3-igbinary  php8.3-imagick
-php8.3-imap      php8.3-intl      php8.3-ldap      php8.3-mbstring
-php8.3-msgpack   php8.3-mysql     php8.3-pgsql     php8.3-readline
-php8.3-redis     php8.3-soap      php8.3-sqlite3   php8.3-xdebug
-php8.3-xml       php8.3-yaml      php8.3-zip
+php8.4-apcu      php8.4-bcmath    php8.4-cli       php8.4-curl
+php8.4-dev       php8.4-gd        php8.4-igbinary  php8.4-imagick
+php8.4-imap      php8.4-intl      php8.4-ldap      php8.4-mbstring
+php8.4-msgpack   php8.4-mysql     php8.4-pgsql     php8.4-readline
+php8.4-redis     php8.4-soap      php8.4-sqlite3   php8.4-xdebug
+php8.4-xml       php8.4-yaml      php8.4-zip
 ```
 
 #### Node Service Image (ta-node)
@@ -1067,7 +1067,7 @@ find /backups -type d -mtime +7 -exec rm -rf {} \;
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| PHP | 8.3 | Updated from 8.0/8.2 |
+| PHP | 8.4 | Updated from 8.3 |
 | Node.js | 18 | Alpine-based |
 | Python (Lambda) | 3.11 | Updated from 3.8 |
 | Ubuntu | 22.04 | Updated from 20.04 |
