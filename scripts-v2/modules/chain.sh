@@ -106,18 +106,32 @@ refresh_static_nodes() {
     echo_info "Refreshing static nodes from ethstats..."
 
     local DEST=/opt/nm/static-nodes.json
+    local TEMP_FILE=$(mktemp)
 
     # Fetch enodes from ethstats and parse properly
     (sleep 2 && echo '{"emit":["ready"]}' && sleep 5) | timeout 10 wscat --connect $ETHSTATS_GET_ENODES 2>/dev/null | \
         jq -c 'select(.emit[1].nodes != null) | .emit[1].nodes[].info.contact' 2>/dev/null | \
         grep '^"enode://' | \
-        jq -s '.' > $DEST
+        jq -s '.' > $TEMP_FILE
 
-    if [ ! -s "$DEST" ] || ! jq empty "$DEST" 2>/dev/null; then
+    # Validate before overwriting
+    if [ ! -s "$TEMP_FILE" ] || ! jq empty "$TEMP_FILE" 2>/dev/null; then
         echo_warn "Failed to fetch static nodes from ethstats, keeping existing file"
+        rm -f "$TEMP_FILE"
         return 1
     fi
 
+    # Check if we got valid enodes
+    local enode_count=$(jq -r 'length' "$TEMP_FILE" 2>/dev/null)
+    if [ -z "$enode_count" ] || [ "$enode_count" -eq 0 ]; then
+        echo_warn "No static nodes retrieved from ethstats, keeping existing file"
+        rm -f "$TEMP_FILE"
+        return 1
+    fi
+
+    # Only now overwrite the destination
+    mv "$TEMP_FILE" "$DEST"
+    echo_info "Successfully updated with $enode_count static nodes"
     cat $DEST
 
     echo
