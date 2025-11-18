@@ -58,7 +58,6 @@ install_or_update_nethermind() {
                 "EnabledModules": ["Admin", "Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
             },
             "Sync": {
-                "SynchronizationEnabled": true,
                 "DownloadBodiesInFastSync": true,
                 "DownloadReceiptsInFastSync": true,
                 "AncientBodiesBarrier": 0,
