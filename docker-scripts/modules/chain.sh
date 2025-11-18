@@ -430,18 +430,17 @@ refresh_static_nodes() {
     echo_info "Fetching current enode list from ethstats..."
 
     # Query ethstats for current nodes using Docker container with wscat
-    # This uses wscat + grep approach, running in node:22-alpine where all tools are available
+    # This uses wscat to connect to ethstats websocket and extract enode addresses
     # Key: Must wait after connecting before sending ready message to receive init response
     local nodes_json=$(docker run --rm node:22-alpine sh -c "
         npm install -g wscat > /dev/null 2>&1
         apk add --no-cache jq grep coreutils > /dev/null 2>&1
 
-        # Send ready message after brief delay, then wait for response
+        # Send ready message after brief delay, capture response, extract enodes from contact field
         (sleep 2 && echo '{\"emit\":[\"ready\"]}' && sleep 5) | timeout 10 wscat --connect '$ethstats_get_enodes' 2>/dev/null | \
-            grep enode | \
-            jq '.emit[1].nodes' 2>/dev/null | \
-            grep -oP '\"enode://[^\"]*\"' | \
-            awk 'BEGIN {print \"[\"} {if(NR>1) printf \",\\n\"; printf \"  %s\", \$0} END {print \"\\n]\"}'
+            jq -c 'select(.emit[1].nodes != null) | .emit[1].nodes[].info.contact' 2>/dev/null | \
+            grep '^\"enode://' | \
+            jq -s '.'
     " 2>/dev/null | jq -c '.')
 
     # Validate the generated JSON and check if not empty
