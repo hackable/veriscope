@@ -179,8 +179,7 @@ obtain_ssl_certificate() {
 
     # Ensure nginx is running to serve ACME challenges
     echo_info "Ensuring nginx container is running..."
-    # Use --no-deps to avoid starting dependencies (nethermind, postgres, redis)
-    if ! docker compose -f "$COMPOSE_FILE" up -d --no-deps nginx; then
+    if ! docker compose -f "$COMPOSE_FILE" up -d nginx; then
         echo_error "Failed to start nginx container"
         return 1
     fi
