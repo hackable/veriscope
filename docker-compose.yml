@@ -86,11 +86,12 @@ services:
     # Internal RPC access via internal network at nethermind:8545
     volumes:
       - ./chains/${VERISCOPE_TARGET:-veriscope_testnet}:/chainspec:ro
+      - ./docker-scripts/nethermind/veriscope.cfg:/nethermind/configs/veriscope.cfg:ro
       - nethermind_data:/nethermind/db
     networks:
       - veriscope
     environment:
-      - NETHERMIND_CONFIG=none
+      - NETHERMIND_CONFIG=veriscope
       - NETHERMIND_JSONRPCCONFIG_ENABLED=true
       - NETHERMIND_JSONRPCCONFIG_HOST=0.0.0.0
       - NETHERMIND_JSONRPCCONFIG_PORT=8545
