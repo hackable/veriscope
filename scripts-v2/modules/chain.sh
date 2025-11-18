@@ -54,12 +54,12 @@ install_or_update_nethermind() {
             },
             "JsonRpc": {
                 "Enabled": true,
-                "SynchronizationEnabled": true,
                 "Host": "0.0.0.0",
                 "Port": 8545,
                 "EnabledModules": ["Admin", "Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
             },
             "Sync": {
+                "SynchronizationEnabled": true,
                 "DownloadBodiesInFastSync": true,
                 "DownloadReceiptsInFastSync": true,
                 "AncientBodiesBarrier": 0,
