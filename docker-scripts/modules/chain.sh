@@ -531,29 +531,6 @@ refresh_static_nodes() {
         echo_warn "Could not retrieve enode information from Nethermind after $max_retries attempts"
     fi
 
-    # Check if node is fully synced before allowing restart
-    echo ""
-    echo_info "Checking sync status..."
-    local sync_response=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq >/dev/null 2>&1 && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"eth_syncing\", \"params\":[]}" http://nethermind:8545/' 2>/dev/null)
-
-    # Extract result field - will be "false" if synced, or a JSON object if syncing
-    local sync_status=$(echo "$sync_response" | jq -r '.result' 2>/dev/null)
-
-    # Debug output
-    echo_info "Raw sync status: $sync_status"
-
-    # Only proceed with restart if sync_status is exactly "false" (fully synced)
-    if [ "$sync_status" = "false" ]; then
-        echo_info "Node is fully synced. Proceeding with restart option..."
-    else
-        echo_warn "Node is currently syncing or status check failed - cannot restart"
-        if [ ! -z "$sync_status" ] && [ "$sync_status" != "null" ]; then
-            echo_info "Sync status: $sync_status"
-        fi
-        echo_info "Static nodes updated but restart skipped. Restart manually when sync is complete."
-        return 1
-    fi
-
     # Ask user if they want to restart Nethermind and clear peer database
     echo ""
     echo_warn "To apply changes, Nethermind needs to restart with cleared peer database"
