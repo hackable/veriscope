@@ -43,8 +43,7 @@ install_or_update_nethermind() {
                 "LogFileName": "/var/log/nethermind.log",
                 "StaticNodesPath": "static-nodes.json",
                 "DiscoveryEnabled": true,
-                "PeerManagerEnabled": true,
-                "ProcessingEnabled": true
+                "PeerManagerEnabled": true
             },
             "Network": {
                 "DiscoveryPort": 30303,
