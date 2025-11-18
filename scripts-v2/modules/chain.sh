@@ -43,7 +43,8 @@ install_or_update_nethermind() {
                 "LogFileName": "/var/log/nethermind.log",
                 "StaticNodesPath": "static-nodes.json",
                 "DiscoveryEnabled": true,
-                "PeerManagerEnabled": true
+                "PeerManagerEnabled": true,
+                "ProcessingEnabled": true
             },
             "Network": {
                 "DiscoveryPort": 30303,
@@ -53,6 +54,7 @@ install_or_update_nethermind() {
             },
             "JsonRpc": {
                 "Enabled": true,
+                "SynchronizationEnabled": true,
                 "Host": "0.0.0.0",
                 "Port": 8545,
                 "EnabledModules": ["Admin", "Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
