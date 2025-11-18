@@ -464,10 +464,14 @@ refresh_static_nodes() {
             echo_warn "No static nodes retrieved from ethstats"
             echo_info "Keeping existing static-nodes.json unchanged"
             cat "$static_nodes_file"
+            rm -f "$temp_file"
+            return 1
         fi
     else
         echo_error "Failed to parse static nodes from ethstats output"
         echo_info "Keeping existing static-nodes.json unchanged"
+        rm -f "$temp_file"
+        return 1
     fi
 
     rm -f "$temp_file"
@@ -562,6 +566,7 @@ refresh_static_nodes() {
     fi
 
     echo_info "Static nodes refresh completed"
+    return 0
 }
 
 # ============================================================================
