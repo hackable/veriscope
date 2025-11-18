@@ -57,6 +57,12 @@ install_or_update_nethermind() {
                 "Port": 8545,
                 "EnabledModules": ["Admin", "Eth", "Parity", "Subscribe", "Trace", "TxPool", "Web3", "Personal", "Proof", "Net", "Health", "Rpc"]
             },
+            "Sync": {
+                "DownloadBodiesInFastSync": true,
+                "DownloadReceiptsInFastSync": true,
+                "AncientBodiesBarrier": 0,
+                "AncientReceiptsBarrier": 0
+            },
             "Aura": {
                 "ForceSealing": true,
                 "AllowAuRaPrivateChains": true
