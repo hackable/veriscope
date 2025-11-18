@@ -106,9 +106,18 @@ refresh_static_nodes() {
     echo_info "Refreshing static nodes from ethstats..."
 
     local DEST=/opt/nm/static-nodes.json
-    echo '[' >$DEST
-    wscat -x '{"emit":["ready"]}' --connect $ETHSTATS_GET_ENODES | grep enode | jq '.emit[1].nodes' | grep -oP '"enode://.*?"' | sed '$!s/$/,/' | tee -a $DEST
-    echo ']' >>$DEST
+
+    # Fetch enodes from ethstats and parse properly
+    (sleep 2 && echo '{"emit":["ready"]}' && sleep 5) | timeout 10 wscat --connect $ETHSTATS_GET_ENODES 2>/dev/null | \
+        jq -c 'select(.emit[1].nodes != null) | .emit[1].nodes[].info.contact' 2>/dev/null | \
+        grep '^"enode://' | \
+        jq -s '.' > $DEST
+
+    if [ ! -s "$DEST" ] || ! jq empty "$DEST" 2>/dev/null; then
+        echo_warn "Failed to fetch static nodes from ethstats, keeping existing file"
+        return 1
+    fi
+
     cat $DEST
 
     echo
