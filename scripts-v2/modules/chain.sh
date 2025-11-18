@@ -120,16 +120,23 @@ refresh_static_nodes() {
 
     # Check if node is fully synced before allowing restart
     echo_info "Checking sync status..."
-    local SYNC_STATUS=`curl -s -X POST -d '{"jsonrpc":"2.0","id":1, "method":"eth_syncing", "params":[]}' http://localhost:8545/ | jq '.result'`
+    local SYNC_RESPONSE=`curl -s -X POST -d '{"jsonrpc":"2.0","id":1, "method":"eth_syncing", "params":[]}' http://localhost:8545/`
+    local SYNC_STATUS=`echo "$SYNC_RESPONSE" | jq -r '.result'`
 
-    if [ "$SYNC_STATUS" != "false" ]; then
-        echo_warn "Node is currently syncing and cannot be restarted"
-        echo_info "Sync status: $SYNC_STATUS"
+    # Debug output
+    echo_info "Raw sync status: $SYNC_STATUS"
+
+    # Only proceed with restart if sync_status is exactly "false" (fully synced)
+    if [ "$SYNC_STATUS" = "false" ]; then
+        echo_info "Node is fully synced. Proceeding with restart..."
+    else
+        echo_warn "Node is currently syncing or status check failed - cannot restart"
+        if [ ! -z "$SYNC_STATUS" ] && [ "$SYNC_STATUS" != "null" ]; then
+            echo_info "Sync status: $SYNC_STATUS"
+        fi
         echo_info "Static nodes updated but restart skipped. Restart manually when sync is complete."
         return 1
     fi
-
-    echo_info "Node is fully synced. Proceeding with restart..."
     echo_info "Clearing peer cache and restarting Nethermind..."
     rm /opt/nm/nethermind_db/vasp/discoveryNodes/SimpleFileDb.db 2>/dev/null || true
     rm /opt/nm/nethermind_db/vasp/peers/SimpleFileDb.db 2>/dev/null || true

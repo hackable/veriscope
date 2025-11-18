@@ -534,16 +534,25 @@ refresh_static_nodes() {
     # Check if node is fully synced before allowing restart
     echo ""
     echo_info "Checking sync status..."
-    local sync_status=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq >/dev/null 2>&1 && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"eth_syncing\", \"params\":[]}" http://nethermind:8545/ | jq -r .result' 2>/dev/null)
+    local sync_response=$(docker run --rm --network "$network_name" alpine sh -c 'apk add -q curl jq >/dev/null 2>&1 && curl -m 10 -s -X POST -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"eth_syncing\", \"params\":[]}" http://nethermind:8545/' 2>/dev/null)
 
-    if [ "$sync_status" != "false" ] && [ ! -z "$sync_status" ] && [ "$sync_status" != "null" ]; then
-        echo_warn "Node is currently syncing and cannot be restarted"
-        echo_info "Sync status: $sync_status"
+    # Extract result field - will be "false" if synced, or a JSON object if syncing
+    local sync_status=$(echo "$sync_response" | jq -r '.result' 2>/dev/null)
+
+    # Debug output
+    echo_info "Raw sync status: $sync_status"
+
+    # Only proceed with restart if sync_status is exactly "false" (fully synced)
+    if [ "$sync_status" = "false" ]; then
+        echo_info "Node is fully synced. Proceeding with restart option..."
+    else
+        echo_warn "Node is currently syncing or status check failed - cannot restart"
+        if [ ! -z "$sync_status" ] && [ "$sync_status" != "null" ]; then
+            echo_info "Sync status: $sync_status"
+        fi
         echo_info "Static nodes updated but restart skipped. Restart manually when sync is complete."
         return 1
     fi
-
-    echo_info "Node is fully synced. Proceeding with restart option..."
 
     # Ask user if they want to restart Nethermind and clear peer database
     echo ""
