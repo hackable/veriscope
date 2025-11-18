@@ -534,36 +534,20 @@ refresh_static_nodes() {
         echo_warn "Could not retrieve enode information from Nethermind after $max_retries attempts"
     fi
 
-    # Ask user if they want to restart Nethermind and clear peer database
+    # Restart Nethermind to apply changes
     echo ""
-    echo_warn "To apply changes, Nethermind needs to restart with cleared peer database"
-    echo_warn "This will remove cached peer information and force reconnection"
+    echo_info "Restarting Nethermind to apply static nodes changes..."
+    echo_info "Clearing peer database..."
 
-    # Check if running interactively
-    if [ -t 0 ]; then
-        echo -n "Restart Nethermind and clear peer cache? (y/N): "
-        read -r confirm
-    else
-        # Non-interactive mode - auto-confirm restart
-        confirm="y"
-        echo_info "Running in non-interactive mode - automatically restarting Nethermind"
-    fi
+    docker compose -f "$COMPOSE_FILE" stop nethermind
 
-    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-        echo_info "Stopping Nethermind..."
-        docker compose -f "$COMPOSE_FILE" stop nethermind
+    # Clear discovery and peer databases from volume using temporary alpine container
+    docker run --rm -v veriscope_nethermind_data:/data alpine sh -c "rm -f /data/db/discoveryNodes/SimpleFileDb.db /data/db/peers/SimpleFileDb.db" 2>/dev/null || true
+    echo_info "Peer cache cleared"
 
-        echo_info "Clearing peer database..."
-        # Clear discovery and peer databases from volume using temporary alpine container
-        docker run --rm -v veriscope_nethermind_data:/data alpine sh -c "rm -f /data/db/discoveryNodes/SimpleFileDb.db /data/db/peers/SimpleFileDb.db" 2>/dev/null || true
-        echo_info "Peer cache cleared"
-
-        echo_info "Starting Nethermind with updated configuration..."
-        docker compose -f "$COMPOSE_FILE" up -d nethermind
-        echo_info "Nethermind restarted successfully"
-    else
-        echo_info "Skipping Nethermind restart. Changes will apply on next restart."
-    fi
+    echo_info "Starting Nethermind with updated configuration..."
+    docker compose -f "$COMPOSE_FILE" up -d nethermind
+    echo_info "Nethermind restarted successfully"
 
     echo_info "Static nodes refresh completed"
     return 0
