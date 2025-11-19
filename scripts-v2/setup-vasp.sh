@@ -174,7 +174,7 @@ full_install() {
 	full_laravel_setup
 	install_horizon
 	install_redis_bloom
-	refresh_static_nodes
+	refresh_static_nodes true
 
 	echo_info "Full installation completed!"
 	echo ""

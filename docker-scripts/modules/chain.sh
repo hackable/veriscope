@@ -386,8 +386,12 @@ setup_chain_config() {
 # Refresh static nodes from ethstats
 # Queries ethstats WebSocket server to get current list of network nodes
 # Updates static-nodes.json and optionally restarts Nethermind
+# Usage: refresh_static_nodes [delete_data]
+#   delete_data: "true" to delete Nethermind volume before refresh (used in full_install)
 # Returns: 0 on success, 1 on failure
 refresh_static_nodes() {
+    local delete_data="${1:-false}"
+
     echo_info "Refreshing static nodes from ethstats..."
 
     # Load environment
@@ -539,13 +543,18 @@ refresh_static_nodes() {
     # Restart Nethermind to apply changes
     echo ""
     echo_info "Restarting Nethermind to apply static nodes changes..."
-    echo_info "Clearing peer database..."
 
     docker compose -f "$COMPOSE_FILE" stop nethermind
 
-    # Clear discovery and peer databases from volume using temporary alpine container
-    docker run --rm -v veriscope_nethermind_data:/data alpine sh -c "rm -f /data/db/discoveryNodes/SimpleFileDb.db /data/db/peers/SimpleFileDb.db" 2>/dev/null || true
-    echo_info "Peer cache cleared"
+    # Delete entire volume or just clear peer cache based on delete_data parameter
+    local project_name=$(get_project_name)
+    if [ "$delete_data" = "true" ]; then
+        echo_info "Deleting Nethermind data volume..."
+        docker volume rm "${project_name}_nethermind_data" 2>/dev/null || true
+    else
+        echo_info "Clearing peer database..."
+        docker run --rm -v "${project_name}_nethermind_data:/data" alpine sh -c "rm -f /data/db/discoveryNodes/SimpleFileDb.db /data/db/peers/SimpleFileDb.db" 2>/dev/null || true
+    fi
 
     echo_info "Starting Nethermind with updated configuration..."
     docker compose -f "$COMPOSE_FILE" up -d nethermind
