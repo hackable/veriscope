@@ -7,7 +7,7 @@ ARG WWWGROUP
 WORKDIR /var/www/html
 
 ENV DEBIAN_FRONTEND noninteractive
-ENV TZ=Asia/Jakarta
+ENV TZ=GMT
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
