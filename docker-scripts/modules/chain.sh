@@ -550,6 +550,7 @@ refresh_static_nodes() {
     local project_name=$(get_project_name)
     if [ "$delete_data" = "true" ]; then
         echo_info "Deleting Nethermind data volume..."
+        docker compose -f "$COMPOSE_FILE" rm -f nethermind 2>/dev/null || true
         docker volume rm "${project_name}_nethermind_data" 2>/dev/null || true
     else
         echo_info "Clearing peer database..."
