@@ -103,7 +103,16 @@ install_or_update_nethermind() {
 # ============================================================================
 
 refresh_static_nodes() {
+    local delete_data="${1:-false}"
+
     echo_info "Refreshing static nodes from ethstats..."
+
+    # Delete Nethermind database if requested (used in full_install)
+    if [ "$delete_data" = "true" ]; then
+        echo_info "Stopping Nethermind and deleting database..."
+        systemctl stop nethermind 2>/dev/null || true
+        rm -rf /opt/nm/nethermind_db
+    fi
 
     local DEST=/opt/nm/static-nodes.json
     local TEMP_FILE=$(mktemp)

@@ -416,7 +416,7 @@ perform_full_install() {
 
         # Wait for Nethermind RPC before refreshing static nodes
         if wait_for_nethermind_rpc 60; then
-            if ! refresh_static_nodes; then
+            if ! refresh_static_nodes true; then
                 echo_warn "Static nodes refresh failed (continuing...)"
             fi
         else
@@ -431,7 +431,7 @@ perform_full_install() {
 
         # Wait for Nethermind RPC before refreshing static nodes
         if wait_for_nethermind_rpc 60; then
-            refresh_static_nodes
+            refresh_static_nodes true
         else
             echo_warn "Nethermind RPC not ready, skipping static nodes refresh"
             echo_info "You can run it manually later: ./docker-scripts/setup-docker.sh refresh-static-nodes"
