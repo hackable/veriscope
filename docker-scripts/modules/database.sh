@@ -187,6 +187,11 @@ PUSHER_APP_PORT=6001" "$laravel_env"
         portable_sed "s|^APP_URL=.*|APP_URL=$app_url|g" "$laravel_env"
         echo_info "Set APP_URL=$app_url"
 
+        # Set production environment settings
+        portable_sed "s|^APP_ENV=.*|APP_ENV=production|g" "$laravel_env"
+        portable_sed "s|^APP_DEBUG=.*|APP_DEBUG=false|g" "$laravel_env"
+        echo_info "Set APP_ENV=production and APP_DEBUG=false"
+
         echo_info "Laravel .env configured (changes are immediately visible in container via bind mount)"
     fi
 

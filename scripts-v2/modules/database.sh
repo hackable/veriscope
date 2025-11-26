@@ -40,6 +40,11 @@ create_postgres_trustanchor_db() {
     portable_sed "s#DB_USERNAME=.*#DB_USERNAME=$PGUSER#g" $ENVDEST
     portable_sed "s#DB_PASSWORD=.*#DB_PASSWORD=$PGPASS#g" $ENVDEST
 
+    # Set production environment settings
+    portable_sed "s#APP_ENV=.*#APP_ENV=production#g" $ENVDEST
+    portable_sed "s#APP_DEBUG=.*#APP_DEBUG=false#g" $ENVDEST
+    echo_info "Set APP_ENV=production and APP_DEBUG=false"
+
     echo_info "Database created: $PGDATABASE"
     echo_info "User: $PGUSER / Password: $PGPASS"
     echo_warn "Save these credentials securely!"
