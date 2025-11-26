@@ -98,6 +98,8 @@ services:
       - NETHERMIND_JSONRPCCONFIG_ENABLEDMODULES=[Eth,Parity,Subscribe,Trace,TxPool,Web3,Personal,Proof,Net,Health,Rpc,Admin]
       # Transaction lookup index - 0 means keep index for ALL blocks (required for eth_getTransactionReceipt by hash)
       - NETHERMIND_RECEIPTCONFIG_TXLOOKUPLIMIT=0
+      # Fix receipts - downloads missing receipts from network (enable after deleting receipts folder)
+      # - NETHERMIND_SYNCCONFIG_FIXRECEIPTS=true
       # Archive mode - keeps full state to allow historical trace replay
       - NETHERMIND_PRUNINGCONFIG_MODE=None
       - NETHERMIND_INITCONFIG_CHAINSPECPATH=/chainspec/shyftchainspec.json
