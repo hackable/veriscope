@@ -96,7 +96,8 @@ services:
       - NETHERMIND_JSONRPCCONFIG_HOST=0.0.0.0
       - NETHERMIND_JSONRPCCONFIG_PORT=8545
       - NETHERMIND_JSONRPCCONFIG_ENABLEDMODULES=[Eth,Parity,Subscribe,Trace,TxPool,Web3,Personal,Proof,Net,Health,Rpc,Admin]
-      - NETHERMIND_INITCONFIG_STORERECEIPTSBYFIRSTBLOCK=0
+      # Transaction lookup index - 0 means keep index for ALL blocks (required for eth_getTransactionReceipt by hash)
+      - NETHERMIND_RECEIPTCONFIG_TXLOOKUPLIMIT=0
       # Archive mode - keeps full state to allow historical trace replay
       - NETHERMIND_PRUNINGCONFIG_MODE=None
       - NETHERMIND_INITCONFIG_CHAINSPECPATH=/chainspec/shyftchainspec.json
