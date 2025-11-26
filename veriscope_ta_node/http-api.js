@@ -865,9 +865,9 @@ queue.taWebhookSend.on('completed', function(job, response) {
 });
 
 queue.taWebhookSend.on('failed', function(job, err) {
-  queue.taWebhookSend.add(job.data, services.bull.opts);
-  // A job failed.
-  logger.error('taWebhookSend: failed job err', err);
+  // Bull automatically retries based on 'attempts' option in services.bull.opts
+  // Do NOT manually re-add the job - this causes infinite duplicates
+  logger.error(`taWebhookSend: job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}):`, err.message);
 });
 queue.taWebhookSend.on('error', function(error) {
   // An error occured.

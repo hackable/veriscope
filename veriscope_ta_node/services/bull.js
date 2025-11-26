@@ -33,20 +33,17 @@ if (parsedRedis.pathname && parsedRedis.pathname.length > 1) {
 
 var opts = {
   removeOnComplete: 100,
-  removeOnFail: false,
-  attempts: 10,
+  removeOnFail: 100, // Keep last 100 failed jobs for debugging
+  attempts: 5, // Retry up to 5 times
+  backoff: {
+    type: 'exponential',
+    delay: 5000 // Start with 5 second delay, doubles each retry
+  },
   limiter: {
     max: 100, // Limit queue to max 100 jobs per 1 seconds.
     duration: 1000,
     bounceBack: true // important
-  },
-  /*
-  backoffStrategies: {
-    jitter: function () {
-      return 5000 + Math.random() * 500;
-    }
   }
-  */
 };
 
 // Configure bull arena UI - version 2.8.3 format
