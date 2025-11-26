@@ -16,6 +16,11 @@ const fs = require('fs');
 var _ = require('underscore');
 const Keyv = require('keyv');
 const keyv = new Keyv(process.env.REDIS_URI);
+
+// Handle keyv connection errors
+keyv.on('error', err => {
+  logger.error('Keyv Redis connection error:', err);
+});
 const jwt = require('express-jwt');
 const utility = require('./utility');
 const session = require('express-session');
@@ -185,11 +190,37 @@ ethereumEvents = new EthereumEvents(web3, contracts, options);
 
 
 async function startSync() {
-  startBlock = await keyv.get('startBlock');
-  if (startBlock === undefined) {
-    startBlock = 1;
+  const maxRetries = 5;
+  const retryDelay = 2000; // 2 seconds
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      startBlock = await keyv.get('startBlock');
+
+      if (startBlock === undefined) {
+        if (attempt < maxRetries) {
+          logger.warn(`startBlock is undefined (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+        logger.error('startBlock is undefined after all retries - this may indicate Redis connection issues or first-time setup');
+        logger.error('CRITICAL: Starting from block 1 will rescan the entire blockchain. If this is not intended, check Redis connectivity.');
+        startBlock = 1;
+      }
+
+      logger.info(`Starting sync from block ${startBlock}`);
+      ethereumEvents.start(startBlock);
+      return;
+    } catch (err) {
+      logger.error(`Error getting startBlock (attempt ${attempt}/${maxRetries}):`, err);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        logger.error('Failed to get startBlock after all retries, cannot start sync safely');
+        throw err;
+      }
+    }
   }
-  ethereumEvents.start(startBlock);
 }
 
 
