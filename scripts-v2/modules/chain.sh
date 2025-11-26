@@ -76,6 +76,9 @@ install_or_update_nethermind() {
             "Pruning": {
                 "Enabled": false
             },
+            "Receipt": {
+                "TxLookupLimit": 0
+            },
             "EthStats": {
                 "Enabled": true,
                 "Contact": "not-yet",
