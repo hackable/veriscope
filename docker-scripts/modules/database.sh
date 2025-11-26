@@ -190,7 +190,14 @@ PUSHER_APP_PORT=6001" "$laravel_env"
         # Set production environment settings
         portable_sed "s|^APP_ENV=.*|APP_ENV=production|g" "$laravel_env"
         portable_sed "s|^APP_DEBUG=.*|APP_DEBUG=false|g" "$laravel_env"
-        echo_info "Set APP_ENV=production and APP_DEBUG=false"
+        # Set LOG_LEVEL to error to prevent verbose debug logging in production
+        if grep -q "^LOG_LEVEL=" "$laravel_env"; then
+            portable_sed "s|^LOG_LEVEL=.*|LOG_LEVEL=error|g" "$laravel_env"
+        else
+            portable_sed "/^LOG_CHANNEL=/a\\
+LOG_LEVEL=error" "$laravel_env"
+        fi
+        echo_info "Set APP_ENV=production, APP_DEBUG=false, LOG_LEVEL=error"
 
         echo_info "Laravel .env configured (changes are immediately visible in container via bind mount)"
     fi

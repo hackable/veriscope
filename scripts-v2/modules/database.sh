@@ -43,7 +43,14 @@ create_postgres_trustanchor_db() {
     # Set production environment settings
     portable_sed "s#APP_ENV=.*#APP_ENV=production#g" $ENVDEST
     portable_sed "s#APP_DEBUG=.*#APP_DEBUG=false#g" $ENVDEST
-    echo_info "Set APP_ENV=production and APP_DEBUG=false"
+    # Set LOG_LEVEL to error to prevent verbose debug logging in production
+    if grep -q "^LOG_LEVEL=" $ENVDEST; then
+        portable_sed "s#LOG_LEVEL=.*#LOG_LEVEL=error#g" $ENVDEST
+    else
+        portable_sed "/^LOG_CHANNEL=/a\\
+LOG_LEVEL=error" $ENVDEST
+    fi
+    echo_info "Set APP_ENV=production, APP_DEBUG=false, LOG_LEVEL=error"
 
     echo_info "Database created: $PGDATABASE"
     echo_info "User: $PGUSER / Password: $PGPASS"
