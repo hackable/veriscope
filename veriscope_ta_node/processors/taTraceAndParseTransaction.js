@@ -65,7 +65,9 @@ module.exports = function(job) {
 
         try {
           let values = utility.taGetAttestationComponents(args, job.data.evt.transactionHash, job.data.evt.values.msg_sender);
-          data['traceValues'] = values.data;
+          if (values) {
+            data['traceValues'] = values.data;
+          }
           var obj = {
             message: "tas-event",
             data: data

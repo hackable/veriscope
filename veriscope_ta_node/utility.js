@@ -418,6 +418,11 @@ module.exports =   {
         logger.debug('decodedDocument');
         logger.debug(decodedDocument);
 
+        if (!decodedDocument) {
+            logger.warn('Failed to decode document for attestation: ' + attestation_hash);
+            return null;
+        }
+
         var versionCode = decodedDocument.versionCode;
         logger.debug('versionCode');
         logger.debug(versionCode);
@@ -526,6 +531,12 @@ module.exports =   {
       var obj;
       var documentsMatrixEncrypted = this.convertComponentsFromHex(data._documentsMatrixEncrypted);
       var decodedDocument = this.decodeDocument(documentsMatrixEncrypted);
+
+      if (!decodedDocument) {
+          logger.warn('Failed to decode document for attestation: ' + attestation_hash);
+          return null;
+      }
+
       var versionCode = decodedDocument.versionCode;
 
       if (versionCode == 3) {
